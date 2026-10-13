@@ -65,7 +65,7 @@ Tools take `--set original|patched` where it matters (`original` = use `Pack/FS3
 | `tools/inventory.py`, `extract.py`, `baseline.py`, `scan_text.py`, `missing_chars.py`, `predict_missing.py` | data survey |
 | `proxy/` | `d3dx9_25.dll` proxy source (MSVC, x86) + default ini |
 | `poc/translations_poc.tsv` | example translations (2 NPCs) |
-| `docs/` | specs: file formats, text pipeline, patch points, open questions, baseline hashes, runtime test log |
+| `docs/` | specs: file formats, text pipeline, patch points, open questions, baseline hashes, runtime test log, [Plan B (Godot) feasibility](docs/plan-b-godot.md) |
 
 ## Credits
 Builds on the user's earlier prototype work (obfuscated-ZIP discovery, dialogue container format, first proxy DLL).
