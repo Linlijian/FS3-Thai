@@ -24,6 +24,6 @@ with open(out, 'w', encoding='utf-8', newline='\n') as f:
             else: continue
             for (blk, st), raw in found:
                 if not any(b >= 0x80 for b in raw): continue          # ASCII-only: labels / code, not text
-                src = raw.decode(fsdialog.ENC).replace('\t', ' '); n += 1; uniq.add(src); small += len(raw) < 6 and not fstables.kind(i.filename)
+                src = raw.decode(fsdialog.ENC).replace('\t', ' '); n += 1; uniq.add(src); small += len(raw) < 6 and fstables.kind(i.filename) in (None, *fstables.MULTI)
                 f.write(f'{i.filename}\t{blk}\t{st}\t{src}\t\n')
 print(f'{n} strings ({len(uniq)} unique), {small} slots < 6 bytes (short keys) -> {out}')

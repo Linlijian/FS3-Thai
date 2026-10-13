@@ -71,3 +71,9 @@ name[40] "FS2Dialog"/"FS2AutoDialog" | u32 count @40 | count x { u32 f0, u32 abs
 ## Bin/FS2_Items.bin, Bin/FS2_ItemHelp.bin (item names / descriptions) [V 2026-10-13]
 * `FS2_Items.bin`: name[40] `FS2ItemData`, `u32 count` @40 (1860), records of 124 B from @44; name[16] at record +0 (longest 14 B). Live copy in `FS3UpdataChs.dat` (`BIN/`).
 * `FS2_ItemHelp.bin`: name[40] `FS2ItemHelp`, `u32 count` @40 (1860, same index as FS2_Items), `count` x u32 offsets @44 relative to the blob at 44+4*count, blob = NUL-terminated cp950 strings that tile it exactly (14 empty). Only in `FS3Bin.dat` (`Bin/`), so the mod rebuilds `FS3Bin.dat` for it. Rewritten with new offsets, so strings may change length.
+
+## Bin/FS2_Fighter.Bin, Bin/FS2_FighterHelp.bin (skills) [V structure 2026-10-13]
+name[40] + u32 header values @40 + offset lists back to back + other records + one string blob at EOF holding every list's NUL-terminated strings in list order (each list's offsets start at 0 for its own sub-blob).
+* `FS2_Fighter.Bin` header (100, 520, 288, 1106, 20, 16, 4, 13): lists are header[0,2,5,6,7] = 100 (beast-seal / passive entries) @0x48, 288 skill names @0x1D8, 16 @0x658, 4 categories @0x698, 13 target types @0x6A8; records 0x6DC..0x2686C (520/1106/20 not decoded); blob 2,165 B.
+* `FS2_FighterHelp.bin` header (65, 166, 15): lists @0x34; help list 1 index = skill list 1 index (checked on 2 skills), list 0 = list 0 entries.
+* Only in `FS3Bin.dat`. Written same-length and padded with spaces, so the blob keeps its NUL count (the engine might find sub-blobs by counting strings). Address: block = list, offset = index. `tools/fstables.py`.
