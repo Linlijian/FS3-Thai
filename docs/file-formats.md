@@ -64,3 +64,6 @@ name[40] "FS2Dialog"/"FS2AutoDialog" | u32 count @40 | count x { u32 f0, u32 abs
 * Interesting: `FS3UpdataChs.dat` Dia006 is 43 B longer than the `FS3Bin.dat.bak` version, so the developers' own tool does relocate.
 * **Why `.dat` differs from `.bak` [V]:** 306 members: 134 `Dia`, 166 `Auto`, `DIALOG.BIN`, `AutoDialog.BIN`, `Message/FS2Message/SGmessage.bin` and `b2g.dat`. Same sizes; the patched dialogs have their text overwritten in place with Thai-channel Big5 codes (your prototype). No offset table changed.
 * **`FS3Bin` (original) vs `FS3UpdataChs`:** 604 of 614 dialog files identical, 10 differ (Updata is the later revision: line-break `*` moved, wording fixed, Dia006 gains a line). Load order unknown (Q2, runtime test C).
+
+## Bin/Objects.bin (speaker / object names) [V 2026-10-13]
+`u32 count` (4300) + `count` x 104-byte records. Record +0 = name[20], cp950, NUL-terminated (longest 19 B), zero-padded; the other 84 bytes are not decoded. Size check: 4 + 4300*104 = 447,204. The name is the label drawn above the dialogue box. Parser/writer: `tools/fsobjects.py` (address = record index, offset 0). `FS3UpdataChs.dat` holds the live copy (differs from `FS3Bin.dat` at byte 102,445).

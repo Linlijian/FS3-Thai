@@ -7,7 +7,7 @@ Rows with empty thai reuse the translation of another row with the same source, 
 Thai without any '|' is word-broken automatically (tools/thaibreak.py, Windows Uniscribe dictionary)."""
 import os, sys, hashlib, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import fszip, fsdialog, thaichan, thaibreak
+import fszip, fsdialog, fsobjects, thaichan, thaibreak
 game, mapf, tsv, out = sys.argv[1:5]
 t2b, _ = thaichan.load_map(mapf)
 assert chr(0xE000) in t2b and chr(0xE17F) in t2b and chr(0xE27F) in t2b, 'map has no (short) KEY codes - run build_channel.py first'
@@ -17,7 +17,8 @@ src = f'{game}/Pack/FS3UpdataChs.dat'; raw = open(src, 'rb').read(); z = fszip.o
 slots = {}                                                                          # member -> {(block, offset): slot bytes}
 def slot_len(member, blk, off):
     if member not in slots:
-        d = z.read(member); slots[member] = {(g.block, st): len(r) for g in fsdialog.groups(fsdialog.parse(d)[0], d)[0] for st, r in g.strs}
+        d = z.read(member)
+        slots[member] = fsobjects.slot_lens(d) if member.endswith('/Objects.bin') else             {(g.block, st): len(r) for g in fsdialog.groups(fsdialog.parse(d)[0], d)[0] for st, r in g.strs}
     return slots[member][(blk, off)]
 items = []                                                                          # (member, (block, offset), text, slot bytes)
 for r in rows:
@@ -37,7 +38,7 @@ for member, at, text, n in items:
     by_member[member][at] = thaichan.encode(key, t2b)
 repl = {}
 for member, edits in by_member.items():
-    d = z.read(member); repl[member] = fsdialog.patch_same_len(d, edits)
+    d = z.read(member); repl[member] = (fsobjects.patch if member.endswith('/Objects.bin') else fsdialog.patch_same_len)(d, edits)
 blob = fszip.write_like(z, raw, replace=repl)
 os.makedirs(out, exist_ok=True); open(f'{out}/FS3UpdataChs.dat', 'wb').write(blob)
 with open(f'{out}/FS3_TH_text.txt', 'w', encoding='utf-8', newline='\n') as f:
@@ -47,6 +48,6 @@ with open(f'{out}/FS3_TH_text.txt', 'w', encoding='utf-8', newline='\n') as f:
 z2 = fszip.open_fszip_bytes(blob); assert z2.testzip() is None
 changed = sorted(i.filename for i in z.infolist() if z.read(i.filename) != z2.read(i.filename)); assert changed == sorted(repl), changed
 for member, edits in by_member.items():
-    d2 = z2.read(member); _, toc = fsdialog.parse(d2)
-    for (blk, off), key in edits.items(): o = toc[blk][1] + off; assert d2[o:o + len(key)] == key and d2[o + len(key)] == 0
+    d2 = z2.read(member); base = (lambda blk: 4 + blk * fsobjects.REC) if member.endswith('/Objects.bin') else (lambda blk, toc=fsdialog.parse(d2)[1]: toc[blk][1])
+    for (blk, off), key in edits.items(): o = base(blk) + off; assert d2[o:o + len(key)] == key and d2[o + len(key)] == 0
 print(f'{sum(map(len, by_member.values()))} slots ({nshort} short keys), {len(ids)} texts, members {changed}; FS3UpdataChs.dat {len(blob)} B sha256 {hashlib.sha256(blob).hexdigest()[:16]}')
