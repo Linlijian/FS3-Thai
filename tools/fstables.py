@@ -1,7 +1,9 @@
 """Name / help tables outside the dialogue scripts [V 2026-10-13]. Address scheme for translation files: block = record index, offset = 0.
 Fixed-record tables (name field at record +0, cp950, NUL-terminated, zero-padded):
   Objects.bin   u32 count | count * 104 B, name[20]            (speaker labels, object names)   live copy in FS3UpdataChs.dat
-  FS2_Items.bin name[40] 'FS2ItemData' | u32 count | count * 124 B, name[16]      (item names)  only in FS3Bin.dat
+  FS2_Items.bin name[40] 'FS2ItemData' | u32 count | count * 124 B, name[16]      (item names)  live copy in FS3UpdataChs.dat
+  ArrayData.bin name[40] 'FS2ArrayData' | u32 groups | groups * (u32 first record, u32 count) | 282 * 636 B, name[12] at +4
+                (battle formations, one record per level)                                     live copy in FS3UpdataChs.dat
 Offset table:
   FS2_ItemHelp.bin name[40] 'FS2ItemHelp' | u32 count | count * u32 offset (from blob start) | blob of NUL-terminated strings
   (tiles exactly) -- rewritten with new offsets, so any length fits.
@@ -11,7 +13,8 @@ Multi-list tables: name[40] | u32 header values @40 (some are list counts) | the
   FS2_FighterHelp.bin lists = header[0,1,2] = 65 / 166 / 15 skill help, first 0x34                       (both only in FS3Bin.dat)
   Address: block = list number, offset = index in the list. Patched SAME-LENGTH, padded with spaces (the engine may find the sub-blobs by counting NULs, so their number never changes)."""
 import struct
-FIXED = {'Objects.bin': (0, 4, 104, 20), 'FS2_Items.bin': (40, 44, 124, 16)}   # count offset, first record, record size, name size
+FIXED = {'Objects.bin': (0, 4, 104, 20, 0), 'FS2_Items.bin': (40, 44, 124, 16, 0),      # count offset, first record, record size,
+         'ArrayData.bin': (None, None, 636, 12, 4)}                                     # name size, name offset in the record
 HELP = ('FS2_ItemHelp.bin',)
 MULTI = {'FS2_Fighter.Bin': ((0, 2, 5, 6, 7), 0x48), 'FS2_FighterHelp.bin': ((0, 1, 2), 0x34)}   # header indices of list counts, first list
 def kind(member):
@@ -32,9 +35,13 @@ def _multi(base, data):
     assert pos == len(data), base
     return out
 def _fixed(base, data):
-    co, first, rec, name = FIXED[base]; n, = struct.unpack_from('<I', data, co)
+    """-> (count, offset of record 0's NAME, record size, name size)"""
+    co, first, rec, name, noff = FIXED[base]
+    if first is None:                        # ArrayData: u32 groups @40, groups * (first record, count), then the records
+        first = 44 + 8 * struct.unpack_from('<I', data, 40)[0]; n, r = divmod(len(data) - first, rec); assert not r, base
+    else: n, = struct.unpack_from('<I', data, co)
     assert first + n * rec == len(data), f'{base}: size != header + count*{rec}'
-    return n, first, rec, name
+    return n, first + noff, rec, name
 def _help(data):
     n, = struct.unpack_from('<I', data, 40); off = struct.unpack_from(f'<{n}I', data, 44); blob = 44 + 4 * n
     strs = [data[blob + o: data.index(b'\0', blob + o)] for o in off]
@@ -50,7 +57,7 @@ def strs(member, data):
 def slot_lens(member, data):
     base = kind(member)
     if base in MULTI: return {(li, k): len(r) for li, k, _, r in _multi(base, data) if r}
-    room = 10 ** 6 if base in HELP else FIXED[base][3] - 1
+    room = 10 ** 6 if base in HELP else FIXED[base][3] - 1      # whole name field minus the NUL
     return {k: room for k in strs(member, data)}
 def patch(member, data, edits):
     """edits: {(record, 0): new_bytes}; fixed tables: NUL-padded in place; help table: rebuilt with new offsets"""
@@ -78,7 +85,7 @@ def offset_of(member, data, blk, off):
     _, first, rec, _ = _fixed(base, data); return first + blk * rec
 if __name__ == '__main__':                                       # round trip on a game copy: patch nothing -> identical bytes
     import sys, os; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import fszip
-    for arc, m in (('FS3UpdataChs.dat', 'BIN/Objects.bin'), ('FS3Bin.dat.bak', 'Bin/FS2_Items.bin'), ('FS3Bin.dat.bak', 'Bin/FS2_ItemHelp.bin'),
+    for arc, m in (('FS3UpdataChs.dat', 'BIN/Objects.bin'), ('FS3UpdataChs.dat', 'BIN/ArrayData.bin'), ('FS3Bin.dat.bak', 'Bin/FS2_Items.bin'), ('FS3Bin.dat.bak', 'Bin/FS2_ItemHelp.bin'),
                    ('FS3Bin.dat.bak', 'Bin/FS2_Fighter.Bin'), ('FS3Bin.dat.bak', 'Bin/FS2_FighterHelp.bin')):
         d = fszip.open_fszip(f'{sys.argv[1]}/Pack/{arc}').read(m); s = strs(m, d)
         assert patch(m, d, {}) == d and patch(m, d, dict(list(s.items())[:5])) == d, m

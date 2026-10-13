@@ -77,3 +77,6 @@ name[40] + u32 header values @40 + offset lists back to back + other records + o
 * `FS2_Fighter.Bin` header (100, 520, 288, 1106, 20, 16, 4, 13): lists are header[0,2,5,6,7] = 100 (beast-seal / passive entries) @0x48, 288 skill names @0x1D8, 16 @0x658, 4 categories @0x698, 13 target types @0x6A8; records 0x6DC..0x2686C (520/1106/20 not decoded); blob 2,165 B.
 * `FS2_FighterHelp.bin` header (65, 166, 15): lists @0x34; help list 1 index = skill list 1 index (checked on 2 skills), list 0 = list 0 entries.
 * Only in `FS3Bin.dat`. Written same-length and padded with spaces, so the blob keeps its NUL count (the engine might find sub-blobs by counting strings). Address: block = list, offset = index. `tools/fstables.py`.
+
+## Bin/ArrayData.bin (battle formations) [V structure 2026-10-13]
+name[40] `FS2ArrayData`, `u32 groups` @40 (226), groups x (u32 first record, u32 record count) @44, then 282 records x 636 B (1,852 + 282*636 = 181,204). Record +4 = name[12] cp950 (longest 10 B); one record per formation level (蟠龍陣 x8). 18 distinct names incl. placeholders 保留 / 無. Live copy in `FS3UpdataChs.dat`. `tools/fstables.py` (address = record, 0).
