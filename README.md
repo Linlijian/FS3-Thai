@@ -6,8 +6,11 @@ Fantasia Sango 3** (UserJoy, Steam build), without modifying or unpacking `FS3.e
 > โปรเจกต์ศึกษาไฟล์เกม Fantasia Sango 3 เพื่อทำ Thai mod สำหรับใช้ส่วนตัว/ชุมชน
 > ไม่มีไฟล์ของเกมอยู่ใน repo นี้ ผู้ใช้ต้องมีเกมของตัวเอง เครื่องมือทั้งหมดอ่านจากสำเนาของผู้ใช้
 
-**Status (v0.1):** Thai renders correctly in a real in-game dialogue box (vowel/tone stacking, word-wrapped long lines),
-with no byte-length limit on translations. Only dialogue files are covered so far; see [docs/open-questions.md](docs/open-questions.md).
+**Status (2026-10-13, after v0.1):** verified in game: dialogue (long / short lines, choice answers), speaker names,
+item names and descriptions (inventory, equip, shop, hotkeys, battle), skill names / descriptions (use, train, hotkeys,
+battle labels), formation names. Thai is drawn at 155 % of the game font, with ASCII at the game's own size, word-wrapped
+per panel (`wrap_rules` in the ini). Not yet: menu / UI labels (some are images), enemy formation names, an installer.
+Open items and evidence for every step: [docs/open-questions.md](docs/open-questions.md).
 
 ## Legal / scope
 * No game assets (text, images, audio, models, binaries) are in this repository, and none must be added. Translation files
@@ -41,7 +44,8 @@ python -I tools/extract.py        work/fs3-copy work/extracted     &:: unpack ev
 python -I tools/test_roundtrip.py work/fs3-copy                    &:: UJ pak + ZIP rebuild byte-identical
 python -I tools/test_dialog.py    work/fs3-copy                    &:: parse all Dia*/Auto*.bin
 
-:: 3. export every dialogue string to a translation sheet (stays on your disk: it contains game text)
+:: 3. export every translatable string (dialogue, names, items, skills, formations) to a translation sheet
+::    (stays on your disk: it contains game text)
 python -I tools/export_strings.py work/fs3-copy work/strings_all.tsv
 ::    fill the last column (thai). Word breaks are added automatically (Windows' Thai dictionary);
 ::    type | yourself only to override. Translate a repeated line once: rows with the same source reuse it.
@@ -49,6 +53,8 @@ python -I tools/export_strings.py work/fs3-copy work/strings_all.tsv
 :: 4. build the Thai mod data (channel table + translations)
 python -I tools/build_channel.py  work/fs3-copy poc/FS3_TH_map.txt work/out
 python -I tools/build_keys.py     work/fs3-copy work/out/FS3_TH_map.txt work/strings_all.tsv work/out
+::    long lines: set box_lines=3 in the ini, play once, then
+python -I tools/overflow_report.py FS3_TH_hook.log work/out/FS3_TH_ids.tsv
 
 :: 5. build the proxy (x86 Native Tools prompt)
 cd proxy && build_msvc.bat
@@ -64,7 +70,9 @@ Tools take `--set original|patched` where it matters (`original` = use `Pack/FS3
 |---|---|
 | `tools/ujpak.py`, `tools/fszip.py` | readers + byte-identical writers for the `UJ  ` pak and the obfuscated-ZIP `.dat` archives |
 | `tools/fsdialog.py` | parser / same-length writer for `FS2Dialog` / `FS2AutoDialog` script files |
-| `tools/export_strings.py` | dialogue strings -> translation TSV (member, block, offset, source, thai) |
+| `tools/export_strings.py` | every translatable string -> translation TSV (member, block, offset, source, thai) |
+| `tools/fstables.py` | name / help tables: Objects, FS2_Items, FS2_ItemHelp, FS2_Fighter(Help), ArrayData |
+| `tools/overflow_report.py` | proxy overflow log -> TSV addresses of translations longer than the dialogue box |
 | `tools/build_channel.py`, `tools/build_keys.py`, `tools/thaichan.py`, `tools/thaibreak.py` | Thai channel + key-expansion data builders; automatic Thai word breaks via Uniscribe |
 | `tools/build_poc.py` | first PoC: Thai written directly into a slot (shows the byte-budget limit) |
 | `tools/analyze_*.py`, `tools/procmon_summary.py` | analysers for proxy logs and Process Monitor exports |
