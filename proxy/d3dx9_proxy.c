@@ -84,6 +84,8 @@ static int g_max_lines = 4000;
 /* Named hooklog, not logf -- logf() is the float logarithm in math.h. */
 static void install_hooks(void);
 static void load_wrap_rules(const char *v);
+static unsigned long long fnv(unsigned long long h, const void *p, int n);
+static int first_time(unsigned long long h);
 
 static void hooklog(const char *fmt, ...)
 {
@@ -309,8 +311,9 @@ static int WINAPI my_MultiByteToWideChar(UINT cp, DWORD flags, LPCCH src,
 
     /* A channel hit is always logged, even with log_mb2wc off. Ordinary text
        traffic fills 4000 lines within the first minutes of play, which is what
-       hid the first prototype run; the interesting event has to survive that. */
-    if (high && (hit || g_log_mb2wc) && g_lines < g_max_lines) {
+       hid the first prototype run; the interesting event has to survive that. Each distinct hit string is logged once
+       (menus convert their keys every frame, which filled 200,000 lines in plana-a9). */
+    if (high && ((hit && first_time(fnv(1469598103934665603ULL, src, n))) || g_log_mb2wc) && g_lines < g_max_lines) {
         hooklog("MultiByteToWideChar cp=%u flags=%lu len=%d%s",
                 cp, (unsigned long)flags, n, hit ? "  [THAI CHANNEL]" : "");
         log_bytes("bytes", (const unsigned char *)src, n);
