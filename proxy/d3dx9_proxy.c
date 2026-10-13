@@ -712,18 +712,23 @@ static void expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG
         kdraw(fi, self, spr, &g_txt[id][L->c[k].st], L->c[k].len, &rc, DT_NOCLIP, col);
     }
 }
-static int is_key(WCHAR c) { return c == 0xE000 || (c >= 0xE100 && c < 0xE180); }
+static int is_key(WCHAR c) { return c == 0xE000 || (c >= 0xE100 && c < 0xE180) || (c > 0xE200 && c < 0xE280); }   /* E2xx = one-char SHORT key (slots < 6 B) */
 static INT key_piece(int k, void *self, void *spr, LPCWSTR s, int n, LPRECT r, DWORD col)
 {
     int i;
     g_ln[k].pend = 0;
     for (i = 0; i < n; i++) {
         WCHAR c = s[i];
-        if (c == 0xE000) { g_ln[k].kst = 1; g_ln[k].kx = r->left; g_ln[k].ky = r->top; }
+        if (c > 0xE200 && c < 0xE280) { g_ln[k].kst = 0; g_ln[k].kx = r->left; g_ln[k].ky = r->top; }
+        else if (c == 0xE000) { g_ln[k].kst = 1; g_ln[k].kx = r->left; g_ln[k].ky = r->top; }
         else if (c >= 0xE100 && c < 0xE180 && g_ln[k].kst == 1) { g_ln[k].kval = c - 0xE100; g_ln[k].kst = 2; }
         else if (c >= 0xE100 && c < 0xE180 && g_ln[k].kst == 2) {
             g_ln[k].kst = 0;
-            __try { expand_draw(self, spr, col, g_ln[k].kx, g_ln[k].ky, r->bottom - r->top, g_ln[k].kval * 128 + (c - 0xE100)); }
+            g_ln[k].kval = g_ln[k].kval * 128 + (c - 0xE100);
+        } else continue;
+        if (g_ln[k].kst == 0) {
+            int id = (c > 0xE200 && c < 0xE280) ? c - 0xE200 : g_ln[k].kval;
+            __try { expand_draw(self, spr, col, g_ln[k].kx, g_ln[k].ky, r->bottom - r->top, id); }
             __except (EXCEPTION_EXECUTE_HANDLER) {
                 if (!g_engine_glyphs) {          /* larger Thai font failed: fall back to the engine font, keep expanding */
                     hooklog("!!! exception 0x%08lx in key expansion with the Thai font -- switching to the engine font", (unsigned long)GetExceptionCode());

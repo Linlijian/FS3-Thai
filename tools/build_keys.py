@@ -2,6 +2,7 @@
 the proxy looks the key up in FS3_TH_text.txt and draws the full Thai line itself (wrapping at '|' hints / spaces, '*' = forced break).
 usage: build_keys.py <game_copy> <map_v3> <translations.tsv> <out_dir>
 TSV: member <TAB> block <TAB> offset_in_block [<TAB> source] <TAB> thai   (export_strings.py writes the 5-column form)
+Slots < 6 bytes get a one-char SHORT key (U+E200+id, ids 1..127 reserved for their texts).
 Rows with empty thai reuse the translation of another row with the same source, else stay original.
 Thai without any '|' is word-broken automatically (tools/thaibreak.py, Windows Uniscribe dictionary)."""
 import os, sys, hashlib, collections
@@ -9,25 +10,34 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fszip, fsdialog, thaichan, thaibreak
 game, mapf, tsv, out = sys.argv[1:5]
 t2b, _ = thaichan.load_map(mapf)
-assert chr(0xE000) in t2b and chr(0xE17F) in t2b, 'map has no KEY codes - run build_channel.py first'
-ids, by_member = {}, collections.defaultdict(dict)
+assert chr(0xE000) in t2b and chr(0xE17F) in t2b and chr(0xE27F) in t2b, 'map has no (short) KEY codes - run build_channel.py first'
 rows = [ln.rstrip('\n').split('\t') for ln in open(tsv, encoding='utf-8') if ln.strip() and not ln.startswith('#')]
 by_src = {r[3]: r[4] for r in reversed(rows) if len(r) == 5 and r[4].strip()}      # first filled row wins
-short = []
-for r in rows:
-    member, blk, off, thai = r[0], r[1], r[2], r[-1]
-    if len(r) == 5:
-        thai = thai.strip() and thai or by_src.get(r[3], '')
-        if thai and len(r[3].encode(fsdialog.ENC)) < 6: short.append(f'{member} {blk}+{off}'); continue
-    if not thai: continue
-    if '|' not in thai: thai = thaibreak.breaks(thai)
-    text = thai.replace('|', '​')
-    i = ids.setdefault(text, len(ids) + 1); assert i < 128 * 128
-    by_member[member][(int(blk), int(off))] = thaichan.encode(chr(0xE000) + chr(0xE100 + i // 128) + chr(0xE100 + i % 128), t2b)
 src = f'{game}/Pack/FS3UpdataChs.dat'; raw = open(src, 'rb').read(); z = fszip.open_fszip_bytes(raw)
+slots = {}                                                                          # member -> {(block, offset): slot bytes}
+def slot_len(member, blk, off):
+    if member not in slots:
+        d = z.read(member); slots[member] = {(g.block, st): len(r) for g in fsdialog.groups(fsdialog.parse(d)[0], d)[0] for st, r in g.strs}
+    return slots[member][(blk, off)]
+items = []                                                                          # (member, (block, offset), text, slot bytes)
+for r in rows:
+    member, blk, off, thai = r[0], int(r[1]), int(r[2]), r[-1]
+    if len(r) == 5 and not thai.strip(): thai = by_src.get(r[3], '')
+    if not thai.strip(): continue
+    if '|' not in thai: thai = thaibreak.breaks(thai)
+    items.append((member, (blk, off), thai.replace('|', '\u200b'), slot_len(member, blk, off)))
+ids = {}                                       # texts used by a < 6-byte slot get the low ids: a SHORT key U+E200+id is one char
+for it in sorted(items, key=lambda it: it[3] >= 6): ids.setdefault(it[2], len(ids) + 1)
+assert len(ids) < 128 * 128
+by_member, nshort = collections.defaultdict(dict), 0
+for member, at, text, n in items:
+    i = ids[text]
+    if n >= 6: key = chr(0xE000) + chr(0xE100 + i // 128) + chr(0xE100 + i % 128)
+    else: assert i < 128, f'more than 127 distinct texts in short slots ({member} {at})'; key = chr(0xE200 + i); nshort += 1
+    by_member[member][at] = thaichan.encode(key, t2b)
 repl = {}
 for member, edits in by_member.items():
-    d = z.read(member); repl[member] = fsdialog.patch_same_len(d, edits)      # asserts every slot is >= 6 bytes
+    d = z.read(member); repl[member] = fsdialog.patch_same_len(d, edits)
 blob = fszip.write_like(z, raw, replace=repl)
 os.makedirs(out, exist_ok=True); open(f'{out}/FS3UpdataChs.dat', 'wb').write(blob)
 with open(f'{out}/FS3_TH_text.txt', 'w', encoding='utf-8', newline='\n') as f:
@@ -38,6 +48,5 @@ z2 = fszip.open_fszip_bytes(blob); assert z2.testzip() is None
 changed = sorted(i.filename for i in z.infolist() if z.read(i.filename) != z2.read(i.filename)); assert changed == sorted(repl), changed
 for member, edits in by_member.items():
     d2 = z2.read(member); _, toc = fsdialog.parse(d2)
-    for (blk, off), key in edits.items(): o = toc[blk][1] + off; assert d2[o:o + 6] == key and d2[o + 6] == 0
-print(f'{sum(map(len, by_member.values()))} slots, {len(ids)} texts, members {changed}; FS3UpdataChs.dat {len(blob)} B sha256 {hashlib.sha256(blob).hexdigest()[:16]}')
-if short: print(f'skipped {len(short)} slots < 6 bytes (too short for a key):', ', '.join(short[:10]))
+    for (blk, off), key in edits.items(): o = toc[blk][1] + off; assert d2[o:o + len(key)] == key and d2[o + len(key)] == 0
+print(f'{sum(map(len, by_member.values()))} slots ({nshort} short keys), {len(ids)} texts, members {changed}; FS3UpdataChs.dat {len(blob)} B sha256 {hashlib.sha256(blob).hexdigest()[:16]}')
