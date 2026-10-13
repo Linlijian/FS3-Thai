@@ -41,11 +41,16 @@ python -I tools/extract.py        work/fs3-copy work/extracted     &:: unpack ev
 python -I tools/test_roundtrip.py work/fs3-copy                    &:: UJ pak + ZIP rebuild byte-identical
 python -I tools/test_dialog.py    work/fs3-copy                    &:: parse all Dia*/Auto*.bin
 
-:: 3. build the Thai mod data (channel table + translations)
-python -I tools/build_channel.py  work/fs3-copy poc/FS3_TH_map.txt work/out
-python -I tools/build_keys.py     work/fs3-copy work/out/FS3_TH_map.txt poc/translations_poc.tsv work/out
+:: 3. export every dialogue string to a translation sheet (stays on your disk: it contains game text)
+python -I tools/export_strings.py work/fs3-copy work/strings_all.tsv
+::    fill the last column (thai). Word breaks are added automatically (Windows' Thai dictionary);
+::    type | yourself only to override. Translate a repeated line once: rows with the same source reuse it.
 
-:: 4. build the proxy (x86 Native Tools prompt)
+:: 4. build the Thai mod data (channel table + translations)
+python -I tools/build_channel.py  work/fs3-copy poc/FS3_TH_map.txt work/out
+python -I tools/build_keys.py     work/fs3-copy work/out/FS3_TH_map.txt work/strings_all.tsv work/out
+
+:: 5. build the proxy (x86 Native Tools prompt)
 cd proxy && build_msvc.bat
 ```
 Install (back up the originals first): `work/out/FS3Bin.dat` and `work/out/FS3UpdataChs.dat` -> `Pack\`;
@@ -59,7 +64,8 @@ Tools take `--set original|patched` where it matters (`original` = use `Pack/FS3
 |---|---|
 | `tools/ujpak.py`, `tools/fszip.py` | readers + byte-identical writers for the `UJ  ` pak and the obfuscated-ZIP `.dat` archives |
 | `tools/fsdialog.py` | parser / same-length writer for `FS2Dialog` / `FS2AutoDialog` script files |
-| `tools/build_channel.py`, `tools/build_keys.py`, `tools/thaichan.py` | Thai channel + key-expansion data builders |
+| `tools/export_strings.py` | dialogue strings -> translation TSV (member, block, offset, source, thai) |
+| `tools/build_channel.py`, `tools/build_keys.py`, `tools/thaichan.py`, `tools/thaibreak.py` | Thai channel + key-expansion data builders; automatic Thai word breaks via Uniscribe |
 | `tools/build_poc.py` | first PoC: Thai written directly into a slot (shows the byte-budget limit) |
 | `tools/analyze_*.py`, `tools/procmon_summary.py` | analysers for proxy logs and Process Monitor exports |
 | `tools/inventory.py`, `extract.py`, `baseline.py`, `scan_text.py`, `missing_chars.py`, `predict_missing.py` | data survey |
