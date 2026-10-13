@@ -20,9 +20,11 @@ def slot_len(member, blk, off):
         d = z.read(member)
         slots[member] = fsobjects.slot_lens(d) if member.endswith('/Objects.bin') else             {(g.block, st): len(r) for g in fsdialog.groups(fsdialog.parse(d)[0], d)[0] for st, r in g.strs}
     return slots[member][(blk, off)]
-items = []                                                                          # (member, (block, offset), text, slot bytes)
+items, seen = [], set()                                                            # (member, (block, offset), text, slot bytes)
 for r in rows:
     member, blk, off, thai = r[0], int(r[1]), int(r[2]), r[-1]
+    if (member, blk, off) in seen: continue                                         # same address twice: first row wins
+    seen.add((member, blk, off))
     if len(r) == 5 and not thai.strip(): thai = by_src.get(r[3], '')
     if not thai.strip(): continue
     if '|' not in thai: thai = thaibreak.breaks(thai)
