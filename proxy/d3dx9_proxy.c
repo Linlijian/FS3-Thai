@@ -50,7 +50,7 @@ static int     g_log_textout = 1;
 static int     g_log_mb2wc = 1;
 static int     g_hooked_textout;
 static int     g_log_draw = 1;          /* log ID3DXFont::DrawTextA/W (step E, black-box) */
-static int     g_thai_layout, g_thai_scale, g_thai_dy, g_thai_charset, g_engine_glyphs, g_wrap_w, g_pitch_pct;   /* defined with defaults in the Thai layout block */
+static int     g_thai_layout, g_thai_scale, g_thai_dy, g_thai_charset, g_engine_glyphs, g_wrap_w, g_pitch_pct, g_box_lines;   /* defined with defaults in the Thai layout block */
 static char    g_thai_face[64];
 static HMODULE g_self;
 static char    g_dir[MAX_PATH];         /* folder this DLL sits in */
@@ -138,6 +138,7 @@ static void load_config(void)
     g_engine_glyphs = GetPrivateProfileIntA("hook", "thai_use_engine_font", 1, g_ini);
     g_wrap_w = GetPrivateProfileIntA("hook", "wrap_width", 504, g_ini);
     g_pitch_pct = GetPrivateProfileIntA("hook", "line_pitch_pct", 108, g_ini);   /* default: own Thai font crashed d3dx9_25 on marks (PoC v4) */
+    g_box_lines = GetPrivateProfileIntA("hook", "box_lines", 0, g_ini);
 }
 
 /* Resolve paths next to this DLL rather than the process CWD. */
@@ -502,7 +503,8 @@ static PFN_CreateFontA g_real_create;
 typedef HRESULT (WINAPI *PFN_GetDevice)(void *, void **);
 typedef HRESULT (WINAPI *PFN_Void)(void *);
 typedef ULONG   (WINAPI *PFN_Release)(void *);
-static struct { void *eng, *thai; LONG dy, th; } g_tf[16];
+typedef HRESULT (WINAPI *PFN_GetTM)(void *, TEXTMETRICA *);
+static struct { void *eng, *thai; LONG dy, th, adiff; } g_tf[16];   /* adiff = Thai ascent - engine ascent (baseline match) */
 static LONG g_tw[16][0x60];              /* advance cache U+0E00..0E5F per Thai font, -1 = unknown */
 static struct { void *font; LONG y, last_x, our_x, adv, base_x, ty, h; WCHAR cl[8]; int cln, used, pend, fi, kst, kval; LONG kx, ky; void *self, *spr; DWORD col; } g_ln[32];
 static int g_ln_next, g_tw_init;
@@ -528,12 +530,16 @@ static int thai_font(void *eng)          /* index into g_tf or -1 */
                        DEFAULT_PITCH | FF_DONTCARE, g_thai_face[0] ? g_thai_face : d.Face, &f);
     ((PFN_Release)(*(void ***)dev)[2])(dev);
     g_tf[fr].eng = eng; g_tf[fr].thai = SUCCEEDED(hr) ? f : NULL;
-    g_tf[fr].th = th;
+    g_tf[fr].th = th; g_tf[fr].adiff = th - d.H;
+    if (f) {                                 /* ASCII is drawn with the engine font: align it on the Thai baseline */
+        TEXTMETRICA te, tt;
+        if (SUCCEEDED(((PFN_GetTM)g_vt_orig[6])(eng, &te)) && SUCCEEDED(((PFN_GetTM)(*(void ***)f)[6])(f, &tt))) g_tf[fr].adiff = tt.tmAscent - te.tmAscent;
+    }
     g_tf[fr].dy = (g_thai_dy == 999) ? -(th - d.H) / 2 : g_thai_dy;
     if (!g_tw_init) { memset(g_tw, 0xff, sizeof g_tw); g_tw_init = 1; }
     memset(g_tw[fr], 0xff, sizeof g_tw[fr]);
-    hooklog("thai font: h=%d (engine %d) dy=%ld charset=%d face=\"%s\" hr=0x%08lx (engine font %p, face \"%s\")",
-            th, d.H, g_tf[fr].dy, g_thai_face[0] ? g_thai_charset : d.Cs, g_thai_face[0] ? g_thai_face : d.Face, (unsigned long)hr, eng, d.Face);
+    hooklog("thai font: h=%d (engine %d) dy=%ld ascii_dy=%ld charset=%d face=\"%s\" hr=0x%08lx (engine font %p, face \"%s\")",
+            th, d.H, g_tf[fr].dy, g_tf[fr].adiff, g_thai_face[0] ? g_thai_charset : d.Cs, g_thai_face[0] ? g_thai_face : d.Face, (unsigned long)hr, eng, d.Face);
     return g_tf[fr].thai ? fr : -1;
 }
 static INT draw_t(int fi, void *self, void *spr, const WCHAR *c, int n, RECT *rc, DWORD fmt, DWORD col)
@@ -619,7 +625,7 @@ static WCHAR *g_txt[MAXID];
 static int g_wrap_w = 504;               /* px: 21 CJK cells, the widest line the original authors used */
 static int g_pitch_pct = 108;            /* 26 px pitch for the 24 px dialogue font (measured, text-pipeline.md) */
 static struct lay { int id, fi; void *font; LONG h; int n; struct { short x, y, st, len; } c[MAXCL]; } g_lay[8];
-static int g_lay_next, g_keys_off;
+static int g_lay_next, g_keys_off, g_box_lines, g_quiet;   /* box_lines: overflow check limit (0 = no check) */
 
 static void load_text(void)
 {
@@ -681,7 +687,7 @@ static struct lay *layout_text(int fi, void *self, int id, LONG h)
         if (c == 0x200B) { lb = n; continue; }                                  /* allowed break before the next cluster */
         if (is_thai(c) && (is_mark(c) || c == 0x0E33)) continue;               /* orphan mark: never draw alone */
         if (is_thai(c)) while (j < len && is_thai(t[j]) && (is_mark(t[j]) || t[j] == 0x0E33)) j++;
-        w = (c == 32) ? space_width(fi, self, h) : measure(fi, self, &t[i], j - i);
+        w = (c == 32) ? space_width(fi, self, h) : measure(c < 0x80 ? -1 : fi, self, &t[i], j - i);   /* ASCII: engine size (Kaiti Latin is huge when scaled) */
         if (x + w > g_wrap_w && n > ls) {
             if (lb > ls && lb <= n) {                                          /* move the clusters after the last break down */
                 LONG shift = (lb < n) ? L->c[lb].x : x;
@@ -695,7 +701,7 @@ static struct lay *layout_text(int fi, void *self, int id, LONG h)
         if (c == 32) lb = n;                                                    /* break allowed after a space */
     }
     L->n = n;
-    hooklog("key %d: %d clusters on %d line(s), wrap %d px, space %ld px, font %s", id, n, line + 1, g_wrap_w, space_width(fi, self, h), fi < 0 ? "engine" : "thai");
+    if (!g_quiet) hooklog("key %d: %d clusters on %d line(s), wrap %d px, space %ld px, font %s", id, n, line + 1, g_wrap_w, space_width(fi, self, h), fi < 0 ? "engine" : "thai");
     return L;
 }
 static void expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG h, int id)
@@ -706,10 +712,22 @@ static void expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG
         if (first_time(hh)) hooklog("key %d: no text in %s", id, TXT_FILE);
         return;
     }
+    if (g_box_lines > 0) {                   /* once, with the real font: list every text that needs more lines than the box has */
+        int i, k2, over = 0, lines; struct lay *C;
+        g_quiet = 1;
+        for (i = 1; i < MAXID; i++) if (g_txt[i]) {
+            C = layout_text(fi, self, i, h);
+            for (lines = 0, k2 = 0; k2 < C->n; k2++) if (C->c[k2].y + 1 > lines) lines = C->c[k2].y + 1;
+            if (lines > g_box_lines) { hooklog("overflow: key %d needs %d lines (box_lines %d)", i, lines, g_box_lines); over++; }
+        }
+        g_quiet = 0; hooklog("overflow check: %d text(s) longer than %d lines (wrap %d px, font %s)", over, g_box_lines, g_wrap_w, fi < 0 ? "engine" : "thai");
+        g_box_lines = 0; memset(g_lay, 0, sizeof g_lay);
+    }
     L = layout_text(fi, self, id, h); y0 += dy;
     for (k = 0; k < L->n; k++) {
         SetRect(&rc, x0 + L->c[k].x, y0 + L->c[k].y * pitch, x0 + L->c[k].x + 3 * th, y0 + L->c[k].y * pitch + 2 * th);
-        kdraw(fi, self, spr, &g_txt[id][L->c[k].st], L->c[k].len, &rc, DT_NOCLIP, col);
+        if (fi >= 0 && g_txt[id][L->c[k].st] < 0x80) OffsetRect(&rc, 0, g_tf[fi].adiff);
+        kdraw(g_txt[id][L->c[k].st] < 0x80 ? -1 : fi, self, spr, &g_txt[id][L->c[k].st], L->c[k].len, &rc, DT_NOCLIP, col);
     }
 }
 static int is_key(WCHAR c) { return c == 0xE000 || (c >= 0xE100 && c < 0xE180) || (c > 0xE200 && c < 0xE280); }   /* E2xx = one-char SHORT key (slots < 6 B) */
