@@ -83,6 +83,7 @@ static int g_max_lines = 4000;
 
 /* Named hooklog, not logf -- logf() is the float logarithm in math.h. */
 static void install_hooks(void);
+static void load_wrap_rules(const char *v);
 
 static void hooklog(const char *fmt, ...)
 {
@@ -118,7 +119,7 @@ static void log_bytes(const char *tag, const unsigned char *p, int n)
 
 static void load_config(void)
 {
-    char v[64];
+    char v[512];
     /* GetPrivateProfileString resolves a bare filename against the Windows
        directory, so the path has to be absolute. */
     if (GetPrivateProfileStringA("hook", "force_charset", "222",
@@ -139,6 +140,7 @@ static void load_config(void)
     g_wrap_w = GetPrivateProfileIntA("hook", "wrap_width", 504, g_ini);
     g_pitch_pct = GetPrivateProfileIntA("hook", "line_pitch_pct", 108, g_ini);   /* default: own Thai font crashed d3dx9_25 on marks (PoC v4) */
     g_box_lines = GetPrivateProfileIntA("hook", "box_lines", 0, g_ini);
+    GetPrivateProfileStringA("hook", "wrap_rules", "", v, sizeof v, g_ini); load_wrap_rules(v);
 }
 
 /* Resolve paths next to this DLL rather than the process CWD. */
@@ -624,7 +626,7 @@ static LONG thai_piece(int k, int fi, void *self, void *spr, LPCWSTR s, int n, L
 static WCHAR *g_txt[MAXID];
 static int g_wrap_w = 504;               /* px: 21 CJK cells, the widest line the original authors used */
 static int g_pitch_pct = 108;            /* 26 px pitch for the 24 px dialogue font (measured, text-pipeline.md) */
-static struct lay { int id, fi; void *font; LONG h; int n; struct { short x, y, st, len; } c[MAXCL]; } g_lay[8];
+static struct lay { int id, fi, wrap; void *font; LONG h; int n; struct { short x, y, st, len; } c[MAXCL]; } g_lay[8];
 static int g_lay_next, g_keys_off, g_box_lines, g_quiet;   /* box_lines: overflow check limit (0 = no check) */
 
 static void load_text(void)
@@ -674,12 +676,32 @@ static LONG space_width(int fi, void *self, LONG h)   /* CALCRECT drops a lone s
     LONG w = measure(fi, self, xsx, 3) - measure(fi, self, xx, 2);
     return w > 0 ? w : h / 4;
 }
-static struct lay *layout_text(int fi, void *self, int id, LONG h)
+/* Per-panel wrap widths: the engine wraps non-dialogue text itself (item help: 14 cells per draw call), so a key only knows where
+   it is drawn. wrap_rules = "h@x=px,..." (font height @ key x, x 0 = any x); first match wins, else wrap_width. Every new
+   (key, height, x) is logged as "key N at h= x= y=" so rules can be read off the log. */
+static struct { int h, x, w; } g_wr[32];
+static int g_nwr;
+static void load_wrap_rules(const char *v)
+{
+    while (*v && g_nwr < 32) {
+        int h, x, w, used = 0;
+        if (sscanf(v, " %d@%d=%d%n", &h, &x, &w, &used) == 3 && used) { g_wr[g_nwr].h = h; g_wr[g_nwr].x = x; g_wr[g_nwr].w = w; g_nwr++; v += used; }
+        while (*v && *v != ',') v++;
+        if (*v == ',') v++;
+    }
+}
+static int wrap_for(LONG h, LONG x)
+{
+    int i;
+    for (i = 0; i < g_nwr; i++) if (g_wr[i].h == h && (g_wr[i].x == 0 || (x >= g_wr[i].x - 4 && x <= g_wr[i].x + 4))) return g_wr[i].w;
+    return g_wrap_w;
+}
+static struct lay *layout_text(int fi, void *self, int id, LONG h, int wrap)
 {
     struct lay *L; const WCHAR *t = g_txt[id]; int i, j, len, n = 0, line = 0, ls = 0, lb = -1, k; LONG x = 0, w;
-    for (i = 0; i < 8; i++) if (g_lay[i].id == id && g_lay[i].fi == fi && g_lay[i].font == self && g_lay[i].h == h) return &g_lay[i];
+    for (i = 0; i < 8; i++) if (g_lay[i].id == id && g_lay[i].fi == fi && g_lay[i].wrap == wrap && g_lay[i].font == self && g_lay[i].h == h) return &g_lay[i];
     L = &g_lay[g_lay_next]; g_lay_next = (g_lay_next + 1) & 7;
-    L->id = id; L->fi = fi; L->font = self; L->h = h; L->n = 0;
+    L->id = id; L->fi = fi; L->wrap = wrap; L->font = self; L->h = h; L->n = 0;
     len = (int)wcslen(t);
     for (i = 0; i < len && n < MAXCL; i = j) {
         WCHAR c = t[i]; j = i + 1;
@@ -688,7 +710,7 @@ static struct lay *layout_text(int fi, void *self, int id, LONG h)
         if (is_thai(c) && (is_mark(c) || c == 0x0E33)) continue;               /* orphan mark: never draw alone */
         if (is_thai(c)) while (j < len && is_thai(t[j]) && (is_mark(t[j]) || t[j] == 0x0E33)) j++;
         w = (c == 32) ? space_width(fi, self, h) : measure(c < 0x80 ? -1 : fi, self, &t[i], j - i);   /* ASCII: engine size (Kaiti Latin is huge when scaled) */
-        if (x + w > g_wrap_w && n > ls) {
+        if (x + w > wrap && n > ls) {
             if (lb > ls && lb <= n) {                                          /* move the clusters after the last break down */
                 LONG shift = (lb < n) ? L->c[lb].x : x;
                 for (k = lb; k < n; k++) { L->c[k].x = (short)(L->c[k].x - shift); L->c[k].y = (short)(line + 1); }
@@ -701,7 +723,7 @@ static struct lay *layout_text(int fi, void *self, int id, LONG h)
         if (c == 32) lb = n;                                                    /* break allowed after a space */
     }
     L->n = n;
-    if (!g_quiet) hooklog("key %d: %d clusters on %d line(s), wrap %d px, space %ld px, font %s", id, n, line + 1, g_wrap_w, space_width(fi, self, h), fi < 0 ? "engine" : "thai");
+    if (!g_quiet) hooklog("key %d: %d clusters on %d line(s), wrap %d px, space %ld px, font %s", id, n, line + 1, wrap, space_width(fi, self, h), fi < 0 ? "engine" : "thai");
     return L;
 }
 static void expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG h, int id)
@@ -716,14 +738,18 @@ static void expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG
         int i, k2, over = 0, lines; struct lay *C;
         g_quiet = 1;
         for (i = 1; i < MAXID; i++) if (g_txt[i]) {
-            C = layout_text(fi, self, i, h);
+            C = layout_text(fi, self, i, h, g_wrap_w);
             for (lines = 0, k2 = 0; k2 < C->n; k2++) if (C->c[k2].y + 1 > lines) lines = C->c[k2].y + 1;
             if (lines > g_box_lines) { hooklog("overflow: key %d needs %d lines (box_lines %d)", i, lines, g_box_lines); over++; }
         }
         g_quiet = 0; hooklog("overflow check: %d text(s) longer than %d lines (wrap %d px, font %s)", over, g_box_lines, g_wrap_w, fi < 0 ? "engine" : "thai");
         g_box_lines = 0; memset(g_lay, 0, sizeof g_lay);
     }
-    L = layout_text(fi, self, id, h); y0 += dy;
+    {
+        unsigned long long hh = fnv(fnv(fnv(7ULL, &id, sizeof id), &h, sizeof h), &x0, sizeof x0);
+        if (first_time(hh)) hooklog("key %d at h=%ld x=%ld y=%ld wrap=%d", id, h, x0, y0, wrap_for(h, x0));
+    }
+    L = layout_text(fi, self, id, h, wrap_for(h, x0)); y0 += dy;
     for (k = 0; k < L->n; k++) {
         SetRect(&rc, x0 + L->c[k].x, y0 + L->c[k].y * pitch, x0 + L->c[k].x + 3 * th, y0 + L->c[k].y * pitch + 2 * th);
         if (fi >= 0 && g_txt[id][L->c[k].st] < 0x80) OffsetRect(&rc, 0, g_tf[fi].adiff);
