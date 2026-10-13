@@ -680,24 +680,33 @@ static LONG space_width(int fi, void *self, LONG h)   /* CALCRECT drops a lone s
     return w > 0 ? w : h / 4;
 }
 /* Per-panel wrap widths: the engine wraps non-dialogue text itself (item help: 14 cells per draw call), so a key only knows where
-   it is drawn. wrap_rules = "h@x=px,..." (font height @ key x, x 0 = any x); first match wins, else wrap_width. Every new
-   (key, height, x) is logged as "key N at h= x= y=" so rules can be read off the log. */
-static struct { int h, x, w; } g_wr[32];
+   it is drawn. wrap_rules = "h@x=px,..." (font height @ key x +-4, x 0 = any x, ">x" = x or further right; centred labels
+   move with the name); "/e" after px = draw at the engine's own size there (narrow panels). First match wins, else
+   wrap_width. Every new (key, height, x) is logged as "key N at h= x= y=" so rules can be read off the log. */
+static struct { int h, x, w, ge, eng; } g_wr[32];
 static int g_nwr;
 static void load_wrap_rules(const char *v)
 {
     while (*v && g_nwr < 32) {
-        int h, x, w, used = 0;
-        if (sscanf(v, " %d@%d=%d%n", &h, &x, &w, &used) == 3 && used) { g_wr[g_nwr].h = h; g_wr[g_nwr].x = x; g_wr[g_nwr].w = w; g_nwr++; v += used; }
+        int h, x, w, used = 0, ge = 0;
+        while (*v == ' ') v++;
+        if (sscanf(v, "%d@%n", &h, &used) == 1 && used) {
+            v += used; if (*v == '>') { ge = 1; v++; }
+            if (sscanf(v, "%d=%d%n", &x, &w, &used) == 2) {
+                v += used; g_wr[g_nwr].h = h; g_wr[g_nwr].x = x; g_wr[g_nwr].w = w; g_wr[g_nwr].ge = ge;
+                g_wr[g_nwr].eng = (v[0] == '/' && (v[1] == 'e' || v[1] == 'E')); g_nwr++;
+            }
+        }
         while (*v && *v != ',') v++;
         if (*v == ',') v++;
     }
 }
-static int wrap_for(LONG h, LONG x)
+static int rule_for(LONG h, LONG x)       /* index into g_wr or -1 */
 {
     int i;
-    for (i = 0; i < g_nwr; i++) if (g_wr[i].h == h && (g_wr[i].x == 0 || (x >= g_wr[i].x - 4 && x <= g_wr[i].x + 4))) return g_wr[i].w;
-    return g_wrap_w;
+    for (i = 0; i < g_nwr; i++)
+        if (g_wr[i].h == h && (g_wr[i].x == 0 || (g_wr[i].ge ? x >= g_wr[i].x : (x >= g_wr[i].x - 4 && x <= g_wr[i].x + 4)))) return i;
+    return -1;
 }
 static struct lay *layout_text(int fi, void *self, int id, LONG h, int wrap)
 {
@@ -731,7 +740,8 @@ static struct lay *layout_text(int fi, void *self, int id, LONG h, int wrap)
 }
 static void expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG h, int id)
 {
-    struct lay *L; RECT rc; int k, fi = key_fi(self); LONG th = fi < 0 ? h : g_tf[fi].th, dy = fi < 0 ? 0 : g_tf[fi].dy, pitch = th * g_pitch_pct / 100;
+    int ri = rule_for(h, x0), wrap = ri < 0 ? g_wrap_w : g_wr[ri].w, fi = (ri >= 0 && g_wr[ri].eng) ? -1 : key_fi(self);
+    struct lay *L; RECT rc; int k; LONG th = fi < 0 ? h : g_tf[fi].th, dy = fi < 0 ? 0 : g_tf[fi].dy, pitch = th * g_pitch_pct / 100;
     if (id <= 0 || id >= MAXID || !g_txt[id]) {
         unsigned long long hh = fnv(1469598103934665603ULL, &id, sizeof id);
         if (first_time(hh)) hooklog("key %d: no text in %s", id, TXT_FILE);
@@ -750,9 +760,9 @@ static void expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG
     }
     {
         unsigned long long hh = fnv(fnv(fnv(7ULL, &id, sizeof id), &h, sizeof h), &x0, sizeof x0);
-        if (first_time(hh)) hooklog("key %d at h=%ld x=%ld y=%ld wrap=%d", id, h, x0, y0, wrap_for(h, x0));
+        if (first_time(hh)) hooklog("key %d at h=%ld x=%ld y=%ld wrap=%d%s", id, h, x0, y0, wrap, fi < 0 ? " engine-size" : "");
     }
-    L = layout_text(fi, self, id, h, wrap_for(h, x0)); y0 += dy;
+    L = layout_text(fi, self, id, h, wrap); y0 += dy;
     for (k = 0; k < L->n; k++) {
         SetRect(&rc, x0 + L->c[k].x, y0 + L->c[k].y * pitch, x0 + L->c[k].x + 3 * th, y0 + L->c[k].y * pitch + 2 * th);
         if (fi >= 0 && g_txt[id][L->c[k].st] < 0x80) OffsetRect(&rc, 0, g_tf[fi].adiff);
