@@ -66,4 +66,8 @@ name[40] "FS2Dialog"/"FS2AutoDialog" | u32 count @40 | count x { u32 f0, u32 abs
 * **`FS3Bin` (original) vs `FS3UpdataChs`:** 604 of 614 dialog files identical, 10 differ (Updata is the later revision: line-break `*` moved, wording fixed, Dia006 gains a line). Load order unknown (Q2, runtime test C).
 
 ## Bin/Objects.bin (speaker / object names) [V 2026-10-13]
-`u32 count` (4300) + `count` x 104-byte records. Record +0 = name[20], cp950, NUL-terminated (longest 19 B), zero-padded; the other 84 bytes are not decoded. Size check: 4 + 4300*104 = 447,204. The name is the label drawn above the dialogue box. Parser/writer: `tools/fsobjects.py` (address = record index, offset 0). `FS3UpdataChs.dat` holds the live copy (differs from `FS3Bin.dat` at byte 102,445).
+`u32 count` (4300) + `count` x 104-byte records. Record +0 = name[20], cp950, NUL-terminated (longest 19 B), zero-padded; the other 84 bytes are not decoded. Size check: 4 + 4300*104 = 447,204. The name is the label drawn above the dialogue box. Parser/writer: `tools/fstables.py` (address = record index, offset 0). `FS3UpdataChs.dat` holds the live copy (differs from `FS3Bin.dat` at byte 102,445).
+
+## Bin/FS2_Items.bin, Bin/FS2_ItemHelp.bin (item names / descriptions) [V 2026-10-13]
+* `FS2_Items.bin`: name[40] `FS2ItemData`, `u32 count` @40 (1860), records of 124 B from @44; name[16] at record +0 (longest 14 B). Live copy in `FS3UpdataChs.dat` (`BIN/`).
+* `FS2_ItemHelp.bin`: name[40] `FS2ItemHelp`, `u32 count` @40 (1860, same index as FS2_Items), `count` x u32 offsets @44 relative to the blob at 44+4*count, blob = NUL-terminated cp950 strings that tile it exactly (14 empty). Only in `FS3Bin.dat` (`Bin/`), so the mod rebuilds `FS3Bin.dat` for it. Rewritten with new offsets, so strings may change length.
