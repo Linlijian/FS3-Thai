@@ -1,0 +1,23 @@
+# repo = tools + docs + proxy source + PoC data only. Never commit game assets, extracted data, logs or screenshots.
+/*
+!/.gitignore
+!/README.md
+!/LICENSE
+!/docs/
+!/tools/
+!/poc/
+!/proxy/
+__pycache__/
+*.pyc
+# build outputs
+/proxy/*.dll
+/proxy/*.obj
+/proxy/*.lib
+/proxy/*.exp
+# game-derived binaries must never land in poc/ or docs/
+*.dat
+*.pak
+*.bin
+*.png
+*.jpg
+*.log
