@@ -502,7 +502,7 @@ static PFN_CreateFontA g_real_create;
 typedef HRESULT (WINAPI *PFN_GetDevice)(void *, void **);
 typedef HRESULT (WINAPI *PFN_Void)(void *);
 typedef ULONG   (WINAPI *PFN_Release)(void *);
-static struct { void *eng, *thai; LONG dy; } g_tf[16];
+static struct { void *eng, *thai; LONG dy, th; } g_tf[16];
 static LONG g_tw[16][0x60];              /* advance cache U+0E00..0E5F per Thai font, -1 = unknown */
 static struct { void *font; LONG y, last_x, our_x, adv, base_x, ty, h; WCHAR cl[8]; int cln, used, pend, fi, kst, kval; LONG kx, ky; void *self, *spr; DWORD col; } g_ln[32];
 static int g_ln_next, g_tw_init;
@@ -523,16 +523,17 @@ static int thai_font(void *eng)          /* index into g_tf or -1 */
     if (fr < 0 || !g_real_create || !g_vt_orig) return -1;
     memset(&d, 0, sizeof d);
     if (FAILED(((PFN_GetDescA)g_vt_orig[4])(eng, &d)) || FAILED(((PFN_GetDevice)g_vt_orig[3])(eng, &dev)) || !dev) return -1;
-    th = d.H * g_thai_scale / 100;
-    hr = g_real_create(dev, th, 0, d.Wt ? d.Wt : FW_NORMAL, 1, FALSE, (DWORD)g_thai_charset, OUT_DEFAULT_PRECIS, d.Q,
-                       DEFAULT_PITCH | FF_DONTCARE, g_thai_face, &f);
+    th = d.H * g_thai_scale / 100;           /* empty thai_face = a larger copy of the engine's own face + charset (Q12) */
+    hr = g_real_create(dev, th, 0, d.Wt ? d.Wt : FW_NORMAL, 1, FALSE, g_thai_face[0] ? (DWORD)g_thai_charset : d.Cs, OUT_DEFAULT_PRECIS, d.Q,
+                       DEFAULT_PITCH | FF_DONTCARE, g_thai_face[0] ? g_thai_face : d.Face, &f);
     ((PFN_Release)(*(void ***)dev)[2])(dev);
     g_tf[fr].eng = eng; g_tf[fr].thai = SUCCEEDED(hr) ? f : NULL;
+    g_tf[fr].th = th;
     g_tf[fr].dy = (g_thai_dy == 999) ? -(th - d.H) / 2 : g_thai_dy;
     if (!g_tw_init) { memset(g_tw, 0xff, sizeof g_tw); g_tw_init = 1; }
     memset(g_tw[fr], 0xff, sizeof g_tw[fr]);
     hooklog("thai font: h=%d (engine %d) dy=%ld charset=%d face=\"%s\" hr=0x%08lx (engine font %p, face \"%s\")",
-            th, d.H, g_tf[fr].dy, g_thai_charset, g_thai_face, (unsigned long)hr, eng, d.Face);
+            th, d.H, g_tf[fr].dy, g_thai_face[0] ? g_thai_charset : d.Cs, g_thai_face[0] ? g_thai_face : d.Face, (unsigned long)hr, eng, d.Face);
     return g_tf[fr].thai ? fr : -1;
 }
 static INT draw_t(int fi, void *self, void *spr, const WCHAR *c, int n, RECT *rc, DWORD fmt, DWORD col)
@@ -617,7 +618,7 @@ static LONG thai_piece(int k, int fi, void *self, void *spr, LPCWSTR s, int n, L
 static WCHAR *g_txt[MAXID];
 static int g_wrap_w = 504;               /* px: 21 CJK cells, the widest line the original authors used */
 static int g_pitch_pct = 108;            /* 26 px pitch for the 24 px dialogue font (measured, text-pipeline.md) */
-static struct lay { int id; void *font; LONG h; int n; struct { short x, y, st, len; } c[MAXCL]; } g_lay[8];
+static struct lay { int id, fi; void *font; LONG h; int n; struct { short x, y, st, len; } c[MAXCL]; } g_lay[8];
 static int g_lay_next, g_keys_off;
 
 static void load_text(void)
@@ -650,24 +651,29 @@ static void load_text(void)
     free(buf);
     hooklog("key expansion: %d texts loaded from %s", count, TXT_FILE);
 }
-static LONG measure(void *self, const WCHAR *s, int n)
+static int key_fi(void *self) { return g_engine_glyphs ? -1 : thai_font(self); }      /* -1 = engine font */
+static INT kdraw(int fi, void *self, void *spr, const WCHAR *s, int n, RECT *rc, DWORD fmt, DWORD col)
+{
+    return fi < 0 ? g_real_draww(self, spr, s, n, rc, fmt, col) : thai_draw(g_tf[fi].thai, spr, s, n, rc, fmt, col);
+}
+static LONG measure(int fi, void *self, const WCHAR *s, int n)
 {
     RECT rc = {0, 0, 0, 0};
-    g_real_draww(self, NULL, s, n, &rc, DT_CALCRECT | DT_NOCLIP, 0);
+    kdraw(fi, self, NULL, s, n, &rc, DT_CALCRECT | DT_NOCLIP, 0);
     return rc.right - rc.left;
 }
-static LONG space_width(void *self, LONG h)   /* CALCRECT drops a lone space (keys_shot1: words ran together) -> measure 'x x' - 'xx' */
+static LONG space_width(int fi, void *self, LONG h)   /* CALCRECT drops a lone space (keys_shot1: words ran together) -> measure 'x x' - 'xx' */
 {
     static const WCHAR xsx[] = {120, 32, 120, 0}, xx[] = {120, 120, 0};
-    LONG w = measure(self, xsx, 3) - measure(self, xx, 2);
+    LONG w = measure(fi, self, xsx, 3) - measure(fi, self, xx, 2);
     return w > 0 ? w : h / 4;
 }
-static struct lay *layout_text(void *self, int id, LONG h)
+static struct lay *layout_text(int fi, void *self, int id, LONG h)
 {
     struct lay *L; const WCHAR *t = g_txt[id]; int i, j, len, n = 0, line = 0, ls = 0, lb = -1, k; LONG x = 0, w;
-    for (i = 0; i < 8; i++) if (g_lay[i].id == id && g_lay[i].font == self && g_lay[i].h == h) return &g_lay[i];
+    for (i = 0; i < 8; i++) if (g_lay[i].id == id && g_lay[i].fi == fi && g_lay[i].font == self && g_lay[i].h == h) return &g_lay[i];
     L = &g_lay[g_lay_next]; g_lay_next = (g_lay_next + 1) & 7;
-    L->id = id; L->font = self; L->h = h; L->n = 0;
+    L->id = id; L->fi = fi; L->font = self; L->h = h; L->n = 0;
     len = (int)wcslen(t);
     for (i = 0; i < len && n < MAXCL; i = j) {
         WCHAR c = t[i]; j = i + 1;
@@ -675,7 +681,7 @@ static struct lay *layout_text(void *self, int id, LONG h)
         if (c == 0x200B) { lb = n; continue; }                                  /* allowed break before the next cluster */
         if (is_thai(c) && (is_mark(c) || c == 0x0E33)) continue;               /* orphan mark: never draw alone */
         if (is_thai(c)) while (j < len && is_thai(t[j]) && (is_mark(t[j]) || t[j] == 0x0E33)) j++;
-        w = (c == 32) ? space_width(self, h) : measure(self, &t[i], j - i);
+        w = (c == 32) ? space_width(fi, self, h) : measure(fi, self, &t[i], j - i);
         if (x + w > g_wrap_w && n > ls) {
             if (lb > ls && lb <= n) {                                          /* move the clusters after the last break down */
                 LONG shift = (lb < n) ? L->c[lb].x : x;
@@ -689,21 +695,21 @@ static struct lay *layout_text(void *self, int id, LONG h)
         if (c == 32) lb = n;                                                    /* break allowed after a space */
     }
     L->n = n;
-    hooklog("key %d: %d clusters on %d line(s), wrap %d px, space %ld px", id, n, line + 1, g_wrap_w, space_width(self, h));
+    hooklog("key %d: %d clusters on %d line(s), wrap %d px, space %ld px, font %s", id, n, line + 1, g_wrap_w, space_width(fi, self, h), fi < 0 ? "engine" : "thai");
     return L;
 }
 static void expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG h, int id)
 {
-    struct lay *L; RECT rc; int k; LONG pitch = h * g_pitch_pct / 100;
+    struct lay *L; RECT rc; int k, fi = key_fi(self); LONG th = fi < 0 ? h : g_tf[fi].th, dy = fi < 0 ? 0 : g_tf[fi].dy, pitch = th * g_pitch_pct / 100;
     if (id <= 0 || id >= MAXID || !g_txt[id]) {
         unsigned long long hh = fnv(1469598103934665603ULL, &id, sizeof id);
         if (first_time(hh)) hooklog("key %d: no text in %s", id, TXT_FILE);
         return;
     }
-    L = layout_text(self, id, h);
+    L = layout_text(fi, self, id, h); y0 += dy;
     for (k = 0; k < L->n; k++) {
-        SetRect(&rc, x0 + L->c[k].x, y0 + L->c[k].y * pitch, x0 + L->c[k].x + 3 * h, y0 + L->c[k].y * pitch + 2 * h);
-        g_real_draww(self, spr, &g_txt[id][L->c[k].st], L->c[k].len, &rc, DT_NOCLIP, col);
+        SetRect(&rc, x0 + L->c[k].x, y0 + L->c[k].y * pitch, x0 + L->c[k].x + 3 * th, y0 + L->c[k].y * pitch + 2 * th);
+        kdraw(fi, self, spr, &g_txt[id][L->c[k].st], L->c[k].len, &rc, DT_NOCLIP, col);
     }
 }
 static int is_key(WCHAR c) { return c == 0xE000 || (c >= 0xE100 && c < 0xE180); }
@@ -719,8 +725,13 @@ static INT key_piece(int k, void *self, void *spr, LPCWSTR s, int n, LPRECT r, D
             g_ln[k].kst = 0;
             __try { expand_draw(self, spr, col, g_ln[k].kx, g_ln[k].ky, r->bottom - r->top, g_ln[k].kval * 128 + (c - 0xE100)); }
             __except (EXCEPTION_EXECUTE_HANDLER) {
-                hooklog("!!! exception 0x%08lx in key expansion -- disabled", (unsigned long)GetExceptionCode());
-                g_keys_off = 1;
+                if (!g_engine_glyphs) {          /* larger Thai font failed: fall back to the engine font, keep expanding */
+                    hooklog("!!! exception 0x%08lx in key expansion with the Thai font -- switching to the engine font", (unsigned long)GetExceptionCode());
+                    g_engine_glyphs = 1;
+                } else {
+                    hooklog("!!! exception 0x%08lx in key expansion -- disabled", (unsigned long)GetExceptionCode());
+                    g_keys_off = 1;
+                }
             }
         }
     }
