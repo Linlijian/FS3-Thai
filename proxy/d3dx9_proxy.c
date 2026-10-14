@@ -160,7 +160,7 @@ static void init_paths(HINSTANCE self)
 
 static void log_wide(const char *tag, const WCHAR *w, int n)
 {
-    char buf[3 * 48 + 8];
+    char buf[5 * 48 + 8];           /* "%04x " = 5 chars per unit (3 overflowed on long lines: crash after battle, plana-a17) */
     int i, k = 0;
     if (n > 48) n = 48;
     for (i = 0; i < n; i++)
