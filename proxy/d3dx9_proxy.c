@@ -629,7 +629,7 @@ static LONG thai_piece(int k, int fi, void *self, void *spr, LPCWSTR s, int n, L
 static WCHAR *g_txt[MAXID];
 static int g_wrap_w = 504;               /* px: 21 CJK cells, the widest line the original authors used */
 static int g_pitch_pct = 108;            /* 26 px pitch for the 24 px dialogue font (measured, text-pipeline.md) */
-static struct lay { int id, fi, wrap; void *font; LONG h; int n; struct { short x, y, st, len; } c[MAXCL]; } g_lay[8];
+static struct lay { int id, fi, wrap; void *font; LONG h, wend; int n; struct { short x, y, st, len; } c[MAXCL]; } g_lay[64];   /* menus show dozens of labels: 8 entries re-laid them out every frame */
 static int g_lay_next, g_keys_off, g_box_lines, g_quiet;   /* box_lines: overflow check limit (0 = no check) */
 
 static void load_text(void)
@@ -682,37 +682,43 @@ static LONG space_width(int fi, void *self, LONG h)   /* CALCRECT drops a lone s
 /* Per-panel wrap widths: the engine wraps non-dialogue text itself (item help: 14 cells per draw call), so a key only knows where
    it is drawn. wrap_rules = "h@x=px,..." (font height @ key x +-4, x 0 = any x, ">x" = x or further right; centred labels
    move with the name); "/e" after px = draw at the engine's own size there (narrow panels). First match wins, else
-   wrap_width. Every new (key, height, x) is logged as "key N at h= x= y=" so rules can be read off the log. */
-static struct { int h, x, w, ge, eng; } g_wr[32];
+   wrap_width. ":y" after x also requires the key's y (+-4): panels sharing an x (tabs above a list). Every new (key, height,
+   x) is logged as "key N at h= x= y=" so rules can be read off the log. */
+static struct { int h, x, y, w, ge, eng; } g_wr[32];
 static int g_nwr;
 static void load_wrap_rules(const char *v)
 {
     while (*v && g_nwr < 32) {
-        int h, x, w, used = 0, ge = 0;
+        int h, x, y = 0, w, used = 0, ge = 0;
         while (*v == ' ') v++;
         if (sscanf(v, "%d@%n", &h, &used) == 1 && used) {
             v += used; if (*v == '>') { ge = 1; v++; }
-            if (sscanf(v, "%d=%d%n", &x, &w, &used) == 2) {
-                v += used; g_wr[g_nwr].h = h; g_wr[g_nwr].x = x; g_wr[g_nwr].w = w; g_wr[g_nwr].ge = ge;
-                g_wr[g_nwr].eng = (v[0] == '/' && (v[1] == 'e' || v[1] == 'E')); g_nwr++;
+            if (sscanf(v, "%d%n", &x, &used) == 1) {
+                v += used;
+                if (*v == ':' && sscanf(v + 1, "%d%n", &y, &used) == 1) v += 1 + used;
+                if (*v == '=' && sscanf(v + 1, "%d%n", &w, &used) == 1) {
+                    v += 1 + used; g_wr[g_nwr].h = h; g_wr[g_nwr].x = x; g_wr[g_nwr].y = y; g_wr[g_nwr].w = w; g_wr[g_nwr].ge = ge;
+                    g_wr[g_nwr].eng = (v[0] == '/' && (v[1] == 'e' || v[1] == 'E')); g_nwr++;
+                }
             }
         }
         while (*v && *v != ',') v++;
         if (*v == ',') v++;
     }
 }
-static int rule_for(LONG h, LONG x)       /* index into g_wr or -1 */
+static int rule_for(LONG h, LONG x, LONG y)  /* index into g_wr or -1 */
 {
     int i;
     for (i = 0; i < g_nwr; i++)
-        if (g_wr[i].h == h && (g_wr[i].x == 0 || (g_wr[i].ge ? x >= g_wr[i].x : (x >= g_wr[i].x - 4 && x <= g_wr[i].x + 4)))) return i;
+        if (g_wr[i].h == h && (g_wr[i].x == 0 || (g_wr[i].ge ? x >= g_wr[i].x : (x >= g_wr[i].x - 4 && x <= g_wr[i].x + 4)))
+            && (g_wr[i].y == 0 || (y >= g_wr[i].y - 4 && y <= g_wr[i].y + 4))) return i;
     return -1;
 }
 static struct lay *layout_text(int fi, void *self, int id, LONG h, int wrap)
 {
     struct lay *L; const WCHAR *t = g_txt[id]; int i, j, len, n = 0, line = 0, ls = 0, lb = -1, k; LONG x = 0, w;
-    for (i = 0; i < 8; i++) if (g_lay[i].id == id && g_lay[i].fi == fi && g_lay[i].wrap == wrap && g_lay[i].font == self && g_lay[i].h == h) return &g_lay[i];
-    L = &g_lay[g_lay_next]; g_lay_next = (g_lay_next + 1) & 7;
+    for (i = 0; i < 64; i++) if (g_lay[i].id == id && g_lay[i].fi == fi && g_lay[i].wrap == wrap && g_lay[i].font == self && g_lay[i].h == h) return &g_lay[i];
+    L = &g_lay[g_lay_next]; g_lay_next = (g_lay_next + 1) & 63;
     L->id = id; L->fi = fi; L->wrap = wrap; L->font = self; L->h = h; L->n = 0;
     len = (int)wcslen(t);
     for (i = 0; i < len && n < MAXCL; i = j) {
@@ -734,18 +740,18 @@ static struct lay *layout_text(int fi, void *self, int id, LONG h, int wrap)
         x += w;
         if (c == 32) lb = n;                                                    /* break allowed after a space */
     }
-    L->n = n;
-    if (!g_quiet) hooklog("key %d: %d clusters on %d line(s), wrap %d px, space %ld px, font %s", id, n, line + 1, wrap, space_width(fi, self, h), fi < 0 ? "engine" : "thai");
+    L->n = n; L->wend = x;
+    if (!g_quiet && first_time(fnv(fnv(fnv(11ULL, &id, sizeof id), &wrap, sizeof wrap), &h, sizeof h))) hooklog("key %d: %d clusters on %d line(s), wrap %d px, space %ld px, font %s", id, n, line + 1, wrap, space_width(fi, self, h), fi < 0 ? "engine" : "thai");
     return L;
 }
-static void expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG h, int id)
+static LONG expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG h, int id)   /* -> x after the text's last line */
 {
-    int ri = rule_for(h, x0), wrap = ri < 0 ? g_wrap_w : g_wr[ri].w, fi = (ri >= 0 && g_wr[ri].eng) ? -1 : key_fi(self);
+    int ri = rule_for(h, x0, y0), wrap = ri < 0 ? g_wrap_w : g_wr[ri].w, fi = (ri >= 0 && g_wr[ri].eng) ? -1 : key_fi(self);
     struct lay *L; RECT rc; int k; LONG th = fi < 0 ? h : g_tf[fi].th, dy = fi < 0 ? 0 : g_tf[fi].dy, pitch = th * g_pitch_pct / 100;
     if (id <= 0 || id >= MAXID || !g_txt[id]) {
         unsigned long long hh = fnv(1469598103934665603ULL, &id, sizeof id);
         if (first_time(hh)) hooklog("key %d: no text in %s", id, TXT_FILE);
-        return;
+        return x0;
     }
     if (g_box_lines > 0) {                   /* once, with the real font: list every text that needs more lines than the box has */
         int i, k2, over = 0, lines; struct lay *C;
@@ -768,11 +774,14 @@ static void expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG
         if (fi >= 0 && g_txt[id][L->c[k].st] < 0x80) OffsetRect(&rc, 0, g_tf[fi].adiff);
         kdraw(g_txt[id][L->c[k].st] < 0x80 ? -1 : fi, self, spr, &g_txt[id][L->c[k].st], L->c[k].len, &rc, DT_NOCLIP, col);
     }
+    return x0 + L->wend;
 }
 static int is_key(WCHAR c) { return c == 0xE000 || (c >= 0xE100 && c < 0xE180) || (c > 0xE200 && c < 0xE280); }   /* E2xx = one-char SHORT key (slots < 6 B) */
+/* Text after a key on the same row ("熱鍵" + "1", drawn cell by cell) would land at its engine position, under the
+   longer Thai: the pen after the expansion (kend) is kept and the row's next pieces continue from there. */
 static INT key_piece(int k, void *self, void *spr, LPCWSTR s, int n, LPRECT r, DWORD col)
 {
-    int i;
+    int i; LONG kend = -1, h = r->bottom - r->top;
     g_ln[k].pend = 0;
     for (i = 0; i < n; i++) {
         WCHAR c = s[i];
@@ -782,10 +791,16 @@ static INT key_piece(int k, void *self, void *spr, LPCWSTR s, int n, LPRECT r, D
         else if (c >= 0xE100 && c < 0xE180 && g_ln[k].kst == 2) {
             g_ln[k].kst = 0;
             g_ln[k].kval = g_ln[k].kval * 128 + (c - 0xE100);
-        } else continue;
+        } else {                                    /* not a key char: after a finished key in this call, draw it at the pen */
+            if (kend >= 0 && !is_key(c)) { RECT m = {0, 0, 0, 0}, rc;
+                g_real_draww(self, NULL, &c, 1, &m, DT_CALCRECT, col);
+                SetRect(&rc, kend, r->top, kend + 2 * h, r->bottom); g_real_draww(self, spr, &c, 1, &rc, DT_NOCLIP, col);
+                kend += m.right - m.left; }
+            continue;
+        }
         if (g_ln[k].kst == 0) {
             int id = (c > 0xE200 && c < 0xE280) ? c - 0xE200 : g_ln[k].kval;
-            __try { expand_draw(self, spr, col, g_ln[k].kx, g_ln[k].ky, r->bottom - r->top, id); }
+            __try { kend = expand_draw(self, spr, col, g_ln[k].kx, g_ln[k].ky, h, id); }
             __except (EXCEPTION_EXECUTE_HANDLER) {
                 if (!g_engine_glyphs) {          /* larger Thai font failed: fall back to the engine font, keep expanding */
                     hooklog("!!! exception 0x%08lx in key expansion with the Thai font -- switching to the engine font", (unsigned long)GetExceptionCode());
@@ -798,7 +813,8 @@ static INT key_piece(int k, void *self, void *spr, LPCWSTR s, int n, LPRECT r, D
         }
     }
     g_ln[k].last_x = r->left; g_ln[k].our_x = r->left; g_ln[k].adv = -1;
-    return r->bottom - r->top;
+    if (kend >= 0) { g_ln[k].our_x = kend; g_ln[k].adv = 0; g_ln[k].kst = 3; }   /* next adjacent piece of this row: right after the Thai text */
+    return h;
 }
 
 static INT layout_draw(void *self, void *spr, LPCWSTR s, INT cnt, LPRECT r, DWORD fmt, DWORD col)
@@ -812,7 +828,8 @@ static INT layout_draw(void *self, void *spr, LPCWSTR s, INT cnt, LPRECT r, DWOR
     }
     for (i = 0; i < n; i++) if (is_thai(s[i])) thai = 1;
     k = row_for(self, r->top);
-    if (r->left > g_ln[k].last_x) x = g_ln[k].our_x + (g_ln[k].adv >= 0 ? g_ln[k].adv : r->left - g_ln[k].last_x);
+    if (r->left > g_ln[k].last_x && g_ln[k].kst == 3 && r->left - g_ln[k].last_x > 2 * (r->bottom - r->top)) x = r->left;   /* separate column after a key (stat value) */
+    else if (r->left > g_ln[k].last_x) x = g_ln[k].our_x + (g_ln[k].adv >= 0 ? g_ln[k].adv : r->left - g_ln[k].last_x);
     else { __try { flush(k); } __except (EXCEPTION_EXECUTE_HANDLER) { g_ln[k].pend = 0; } x = r->left; }   /* new pass */
     g_ln[k].last_x = r->left; g_ln[k].our_x = x;
     fi = thai ? thai_font(self) : -1;
