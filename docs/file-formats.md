@@ -80,3 +80,8 @@ name[40] + u32 header values @40 + offset lists back to back + other records + o
 
 ## Bin/ArrayData.bin (battle formations) [V structure 2026-10-13]
 name[40] `FS2ArrayData`, `u32 groups` @40 (226), groups x (u32 first record, u32 record count) @44, then 282 records x 636 B (1,852 + 282*636 = 181,204). Record +4 = name[12] cp950 (longest 10 B); one record per formation level (蟠龍陣 x8). 18 distinct names incl. placeholders 保留 / 無. Live copy in `FS3UpdataChs.dat`. `tools/fstables.py` (address = record, 0).
+
+## BIN/Message.bin (UI labels, menus, system messages) [V structure 2026-10-14]
+`MSGV2.0` + NUL, `u32` records @8 (931), `u32` strings @12 (798), 931 x 48-byte records from 16, then 798 x (`u32` length incl. NUL, cp950 bytes) ending exactly at EOF (string area @0xAEA0). No u32 in the record area lies between 1,000 and the end of the string area, so records do not point at string byte offsets; strings are addressed by index and rewritten at any length (`tools/fstables.py`). 147 strings are printf templates (`%d`, `%s`, `@@W(10)@@%s@@RW@@ ...`) and are not exported: a key would drop the inserted value. Live copy in `FS3UpdataChs.dat` (the `FS3Bin.dat` copy holds the user's old prototype).
+
+Menu labels seen as DrawTextW text (plana-a6/a7 logs): title menu, save slots, stat names, inventory tabs and headers. The top menu bar (队伍 物品 武学 ...) is not drawn as text (image).

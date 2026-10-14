@@ -11,15 +11,29 @@ Multi-list tables: name[40] | u32 header values @40 (some are list counts) | the
 | other records | at EOF one blob = the lists' NUL-terminated strings in list order (each list's offsets start at 0).
   FS2_Fighter.Bin     lists = header[0,2,5,6,7] = 100 (beast-seal) / 288 skills / 16 / 4 categories / 13 targets, first 0x48
   FS2_FighterHelp.bin lists = header[0,1,2] = 65 / 166 / 15 skill help, first 0x34                       (both only in FS3Bin.dat)
-  Address: block = list number, offset = index in the list. Patched SAME-LENGTH, padded with spaces (the engine may find the sub-blobs by counting NULs, so their number never changes)."""
+  Address: block = list number, offset = index in the list. Patched SAME-LENGTH, padded with spaces (the engine may find the sub-blobs by counting NULs, so their number never changes).
+Message table:
+  Message.bin 'MSGV2.0' + NUL | u32 records @8 (931) | u32 strings @12 (798) | records * 48 B | strings * (u32 len incl. NUL, bytes)
+  to EOF (UI labels, menus, system messages). No record value points into the string area (none in 1000..EOF), so the
+  strings are taken by index and rewritten at any length. Address: block = string index, offset = 0.   live copy in FS3UpdataChs.dat"""
 import struct
 FIXED = {'Objects.bin': (0, 4, 104, 20, 0), 'FS2_Items.bin': (40, 44, 124, 16, 0),      # count offset, first record, record size,
          'ArrayData.bin': (None, None, 636, 12, 4)}                                     # name size, name offset in the record
 HELP = ('FS2_ItemHelp.bin',)
 MULTI = {'FS2_Fighter.Bin': ((0, 2, 5, 6, 7), 0x48), 'FS2_FighterHelp.bin': ((0, 1, 2), 0x34)}   # header indices of list counts, first list
+MSG = ('Message.bin',)
 def kind(member):
     base = member.rsplit('/', 1)[-1]
-    return base if base in FIXED or base in HELP or base in MULTI else None
+    return base if base in FIXED or base in HELP or base in MULTI or base in MSG else None
+def _msg(data):
+    """-> (start of the string area, [raw strings]) ; the length chain must end exactly at EOF"""
+    assert data[:8] == b'MSGV2.0\x00', 'not MSGV2.0'
+    nrec, nstr = struct.unpack_from('<2I', data, 8); p = start = 16 + 48 * nrec; out = []
+    for _ in range(nstr):
+        n, = struct.unpack_from('<I', data, p); assert n and data[p + 3 + n] == 0, ('Message.bin chain', p)
+        out.append(data[p + 4:p + 3 + n]); p += 4 + n
+    assert p == len(data), 'Message.bin: chain does not end at EOF'
+    return start, out
 def _multi(base, data):
     """-> [(list, index, abs_offset, raw)] ; blob start found by counting the strings back from EOF, then every offset checked"""
     which, first = MULTI[base]; hv = struct.unpack_from(f'<{max(which) + 1}I', data, 40); counts = [hv[i] for i in which]
@@ -51,13 +65,14 @@ def strs(member, data):
     """-> {(record, 0): raw bytes} for every non-empty string"""
     base = kind(member)
     if base in MULTI: return {(li, k): r for li, k, _, r in _multi(base, data) if r}
+    if base in MSG: return {(i, 0): r for i, r in enumerate(_msg(data)[1]) if r and b'%' not in r}   # printf templates: a key would drop the arguments
     if base in HELP: return {(i, 0): s for i, s in enumerate(_help(data)) if s}
     n, first, rec, name = _fixed(base, data)
     return {(i, 0): r for i in range(n) if (r := data[first + i * rec: first + i * rec + name].split(b'\0')[0])}
 def slot_lens(member, data):
     base = kind(member)
     if base in MULTI: return {(li, k): len(r) for li, k, _, r in _multi(base, data) if r}
-    room = 10 ** 6 if base in HELP else FIXED[base][3] - 1      # whole name field minus the NUL
+    room = 10 ** 6 if base in HELP or base in MSG else FIXED[base][3] - 1      # whole name field minus the NUL
     return {k: room for k in strs(member, data)}
 def patch(member, data, edits):
     """edits: {(record, 0): new_bytes}; fixed tables: NUL-padded in place; help table: rebuilt with new offsets"""
@@ -67,6 +82,10 @@ def patch(member, data, edits):
         for key, new in edits.items():
             pos, n = at[key]; assert len(new) <= n, (member, key, len(new), n); b[pos:pos + n] = new.ljust(n, b' ')   # spaces, not NULs: the blob keeps its exact NUL layout
         return bytes(b)
+    if base in MSG:
+        start, s = _msg(data)
+        for (i, _), new in edits.items(): s[i] = new
+        return data[:start] + b''.join(struct.pack('<I', len(x) + 1) + x + bytes(1) for x in s)
     if base in HELP:
         s = _help(data)
         for (i, _), new in edits.items(): s[i] = new
@@ -81,11 +100,13 @@ def offset_of(member, data, blk, off):
     """byte offset of a written string (for verification)"""
     base = kind(member)
     if base in MULTI: return {(li, k): pos for li, k, pos, _ in _multi(base, data)}[(blk, off)]
+    if base in MSG:
+        start, s = _msg(data); return start + sum(4 + len(x) + 1 for x in s[:blk]) + 4
     if base in HELP: return 44 + 4 * struct.unpack_from('<I', data, 40)[0] + struct.unpack_from('<I', data, 44 + 4 * blk)[0]
     _, first, rec, _ = _fixed(base, data); return first + blk * rec
 if __name__ == '__main__':                                       # round trip on a game copy: patch nothing -> identical bytes
     import sys, os; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import fszip
-    for arc, m in (('FS3UpdataChs.dat', 'BIN/Objects.bin'), ('FS3UpdataChs.dat', 'BIN/ArrayData.bin'), ('FS3Bin.dat.bak', 'Bin/FS2_Items.bin'), ('FS3Bin.dat.bak', 'Bin/FS2_ItemHelp.bin'),
+    for arc, m in (('FS3UpdataChs.dat', 'BIN/Objects.bin'), ('FS3UpdataChs.dat', 'BIN/ArrayData.bin'), ('FS3UpdataChs.dat', 'BIN/Message.bin'), ('FS3Bin.dat.bak', 'Bin/FS2_Items.bin'), ('FS3Bin.dat.bak', 'Bin/FS2_ItemHelp.bin'),
                    ('FS3Bin.dat.bak', 'Bin/FS2_Fighter.Bin'), ('FS3Bin.dat.bak', 'Bin/FS2_FighterHelp.bin')):
         d = fszip.open_fszip(f'{sys.argv[1]}/Pack/{arc}').read(m); s = strs(m, d)
         assert patch(m, d, {}) == d and patch(m, d, dict(list(s.items())[:5])) == d, m
