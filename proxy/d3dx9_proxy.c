@@ -785,8 +785,8 @@ static INT key_piece(int k, void *self, void *spr, LPCWSTR s, int n, LPRECT r, D
     g_ln[k].pend = 0;
     for (i = 0; i < n; i++) {
         WCHAR c = s[i];
-        if (c > 0xE200 && c < 0xE280) { g_ln[k].kst = 0; g_ln[k].kx = r->left; g_ln[k].ky = r->top; }
-        else if (c == 0xE000) { g_ln[k].kst = 1; g_ln[k].kx = r->left; g_ln[k].ky = r->top; }
+        if (c > 0xE200 && c < 0xE280) { g_ln[k].kst = 0; g_ln[k].kx = kend >= 0 ? kend : r->left; g_ln[k].ky = r->top; }
+        else if (c == 0xE000) { g_ln[k].kst = 1; g_ln[k].kx = kend >= 0 ? kend : r->left; g_ln[k].ky = r->top; }
         else if (c >= 0xE100 && c < 0xE180 && g_ln[k].kst == 1) { g_ln[k].kval = c - 0xE100; g_ln[k].kst = 2; }
         else if (c >= 0xE100 && c < 0xE180 && g_ln[k].kst == 2) {
             g_ln[k].kst = 0;
@@ -823,8 +823,14 @@ static INT layout_draw(void *self, void *spr, LPCWSTR s, INT cnt, LPRECT r, DWOR
     if (!r || !s || (fmt & DT_CALCRECT)) return g_real_draww(self, spr, s, cnt, r, fmt, col);
     n = (cnt < 0) ? (int)wcslen(s) : cnt;
     for (i = 0; i < n; i++) if (is_key(s[i])) {          /* translated slot: key -> full Thai text */
+        RECT rr = *r; LONG hh = r->bottom - r->top;
         k = row_for(self, r->top);
-        return g_keys_off ? (r->bottom - r->top) : key_piece(k, self, spr, s, n, r, col);
+        if (r->left > g_ln[k].last_x && r->left - g_ln[k].last_x <= 2 * hh && g_ln[k].our_x != g_ln[k].last_x)   /* follows shifted text */
+            OffsetRect(&rr, g_ln[k].our_x + (g_ln[k].adv >= 0 ? g_ln[k].adv : r->left - g_ln[k].last_x) - r->left, 0);
+        if (g_keys_off) return hh;
+        key_piece(k, self, spr, s, n, &rr, col);
+        g_ln[k].last_x = r->left;                        /* gaps are measured in engine coordinates */
+        return hh;
     }
     for (i = 0; i < n; i++) if (is_thai(s[i])) thai = 1;
     k = row_for(self, r->top);
