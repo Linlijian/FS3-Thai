@@ -2,7 +2,7 @@
 Menu/M_Team	ทีม
 Menu/M_Item	ไอเทม
 Menu/M_Martial	วิชา
-Menu/M_Pet	ผนึกสัตว์
+Menu/M_Pet	ตราสัตว์
 Menu/M_System	ระบบ
 Menu/M_Mission	บันทึก
 Menu/M_S_Status	สถานะ
@@ -13,8 +13,8 @@ Menu/M_S_Use	ใช้
 Menu/M_S_Study	ฝึก
 Menu/M_S_HotKey	คีย์ลัด
 Menu/M_S_Grow	เติบโต
-Menu/M_S_Auto	เซฟอัตโนมัติ
-Menu/M_S_Save	บันทึกเกม
-Menu/M_S_Load	โหลดเกม
+Menu/M_S_Auto	ออโต้เซฟ
+Menu/M_S_Save	เซฟ
+Menu/M_S_Load	โหลด
 Menu/M_S_Setup	ตั้งค่า
 Menu/M_S_Exit	ออก

@@ -38,7 +38,7 @@ def render(px, w, h, text):
     cx, cy = (x0 + x1) // 2, (y0 + y1) // 2; size = int((y1 - y0 + 1) * 1.4)          # Thai x-height is small next to a CJK glyph box
     while True:                                           # shrink until it fits the texture with room for the glow
         a, tw = mask(text, w, h, size, cx, cy)
-        if tw <= w - 8 or size <= 8: break
+        if tw <= min(w - 8, x1 - x0 + 1 + 28) or size <= 8: break      # buttons sit ~90 px apart: stay near the original ink width
         size -= 1
     if cx - tw // 2 < 4 or cx + tw // 2 > w - 4: cx = w // 2; a, tw = mask(text, w, h, size, cx, cy)
     glow = bytearray(w * h)
