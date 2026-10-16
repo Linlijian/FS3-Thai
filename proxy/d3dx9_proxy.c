@@ -781,26 +781,26 @@ static int is_key(WCHAR c) { return c == 0xE000 || (c >= 0xE100 && c < 0xE180) |
    longer Thai: the pen after the expansion (kend) is kept and the row's next pieces continue from there. */
 static INT key_piece(int k, void *self, void *spr, LPCWSTR s, int n, LPRECT r, DWORD col)
 {
-    int i; LONG kend = -1, h = r->bottom - r->top;
+    int i; LONG kend = -1, pen = r->left, h = r->bottom - r->top;   /* pen: text before a key ("9" + KEY) is drawn, the key follows it */
     g_ln[k].pend = 0;
     for (i = 0; i < n; i++) {
         WCHAR c = s[i];
-        if (c > 0xE200 && c < 0xE280) { g_ln[k].kst = 0; g_ln[k].kx = kend >= 0 ? kend : r->left; g_ln[k].ky = r->top; }
-        else if (c == 0xE000) { g_ln[k].kst = 1; g_ln[k].kx = kend >= 0 ? kend : r->left; g_ln[k].ky = r->top; }
+        if (c > 0xE200 && c < 0xE280) { g_ln[k].kst = 0; g_ln[k].kx = pen; g_ln[k].ky = r->top; }
+        else if (c == 0xE000) { g_ln[k].kst = 1; g_ln[k].kx = pen; g_ln[k].ky = r->top; }
         else if (c >= 0xE100 && c < 0xE180 && g_ln[k].kst == 1) { g_ln[k].kval = c - 0xE100; g_ln[k].kst = 2; }
         else if (c >= 0xE100 && c < 0xE180 && g_ln[k].kst == 2) {
             g_ln[k].kst = 0;
             g_ln[k].kval = g_ln[k].kval * 128 + (c - 0xE100);
-        } else {                                    /* not a key char: after a finished key in this call, draw it at the pen */
-            if (kend >= 0 && !is_key(c)) { RECT m = {0, 0, 0, 0}, rc;
+        } else {                                    /* not a key char (before, between or after keys): draw it at the pen */
+            if (!is_key(c) && g_ln[k].kst != 1 && g_ln[k].kst != 2) { RECT m = {0, 0, 0, 0}, rc;
                 g_real_draww(self, NULL, &c, 1, &m, DT_CALCRECT, col);
-                SetRect(&rc, kend, r->top, kend + 2 * h, r->bottom); g_real_draww(self, spr, &c, 1, &rc, DT_NOCLIP, col);
-                kend += m.right - m.left; }
+                SetRect(&rc, pen, r->top, pen + 2 * h, r->bottom); g_real_draww(self, spr, &c, 1, &rc, DT_NOCLIP, col);
+                pen += m.right - m.left; if (kend >= 0) kend = pen; }
             continue;
         }
         if (g_ln[k].kst == 0) {
             int id = (c > 0xE200 && c < 0xE280) ? c - 0xE200 : g_ln[k].kval;
-            __try { kend = expand_draw(self, spr, col, g_ln[k].kx, g_ln[k].ky, h, id); }
+            __try { pen = kend = expand_draw(self, spr, col, g_ln[k].kx, g_ln[k].ky, h, id); }
             __except (EXCEPTION_EXECUTE_HANDLER) {
                 if (!g_engine_glyphs) {          /* larger Thai font failed: fall back to the engine font, keep expanding */
                     hooklog("!!! exception 0x%08lx in key expansion with the Thai font -- switching to the engine font", (unsigned long)GetExceptionCode());
