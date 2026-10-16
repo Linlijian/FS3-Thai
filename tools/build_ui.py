@@ -1,6 +1,6 @@
 """Thai labels for the image-only UI texts in FS3UI.pak (menu bar, sub tabs, ...).
 usage: build_ui.py <game_copy> <labels.tsv> <out_dir>
-labels.tsv: texture base (path inside FS3UI.pak without _Nor/_Ove/_Pre/_Dis.dds, e.g. Menu/M_Team) <TAB> thai
+labels.tsv: texture base (path inside FS3UI.pak without _Nor/_Ove/_Pre/_Dis.dds, e.g. Menu/M_Team) <TAB> thai [<TAB> extra px over the original ink width, default 28 = top-bar pitch]
 Every state file of a base is redrawn: the original's glyph box and colours (top / bottom of the ink, for the gradient) are
 measured, the Thai label is drawn with a Windows Thai font (GDI shapes vowels / tones), a white glow like the original's is
 added, and the texture is written as uncompressed A8R8G8B8 DDS. A hand-edited <out_dir>/../ui_edit/<file>.png (same size)
@@ -29,7 +29,7 @@ def mask(text, w, h, px_h, cx, cy):
     raw = C.string_at(bits, w * h * 4); out = bytes(raw[i + 1] for i in range(0, len(raw), 4))
     g.DeleteObject(font); g.DeleteObject(bmp); g.DeleteDC(dc)
     return out, tw
-def render(px, w, h, text):
+def render(px, w, h, text, extra=28):
     ink = [(x, y) for y in range(h) for x in range(w) if px[(y * w + x) * 4 + 3] > 200 and sum(px[(y * w + x) * 4:(y * w + x) * 4 + 3]) < 600]
     if not ink: ink = [(x, y) for y in range(h) for x in range(w) if px[(y * w + x) * 4 + 3] > 128]
     x0, x1 = min(p[0] for p in ink), max(p[0] for p in ink); y0, y1 = min(p[1] for p in ink), max(p[1] for p in ink)
@@ -38,7 +38,7 @@ def render(px, w, h, text):
     cx, cy = (x0 + x1) // 2, (y0 + y1) // 2; size = int((y1 - y0 + 1) * 1.4)          # Thai x-height is small next to a CJK glyph box
     while True:                                           # shrink until it fits the texture with room for the glow
         a, tw = mask(text, w, h, size, cx, cy)
-        if tw <= min(w - 8, x1 - x0 + 1 + 28) or size <= 8: break      # buttons sit ~90 px apart: stay near the original ink width
+        if tw <= min(w - 8, x1 - x0 + 1 + extra) or size <= 8: break   # buttons sit close: stay near the original ink width
         size -= 1
     if cx - tw // 2 < 4 or cx + tw // 2 > w - 4: cx = w // 2; a, tw = mask(text, w, h, size, cx, cy)
     glow = bytearray(w * h)
@@ -56,7 +56,8 @@ def render(px, w, h, text):
     return bytes(out)
 if __name__ == '__main__':
     game, labels, out = sys.argv[1:4]
-    want = {ln.split('\t')[0]: ln.rstrip('\n').split('\t')[1] for ln in open(labels, encoding='utf-8') if ln.strip() and not ln.startswith('#')}
+    rows = [ln.rstrip('\n').split('\t') for ln in open(labels, encoding='utf-8') if ln.strip() and not ln.startswith('#')]
+    want = {r[0]: r[1] for r in rows}; extra = {r[0]: int(r[2]) for r in rows if len(r) > 2}
     buf = open(f'{game}/Pack/FS3UI.pak', 'rb').read(); (kids, pname, ver), _, _ = ujpak.read_tree(buf)
     os.makedirs(f'{out}/ui_preview', exist_ok=True); edit_dir = os.path.join(os.path.dirname(os.path.abspath(out)), 'ui_edit'); done = []
     def visit(nodes, path):
@@ -68,7 +69,7 @@ if __name__ == '__main__':
             tmp = f'{out}/ui_preview/_orig.dds'; open(tmp, 'wb').write(n.data); w, h, px, mips = fsdds.read(tmp)
             ed = os.path.join(edit_dir, p.replace('/', '_')[:-4] + '.png')
             if os.path.exists(ed): ew, eh, new = fsdds.read_png(ed); assert (ew, eh) == (w, h), ed
-            else: new = render(px, w, h, want[base])
+            else: new = render(px, w, h, want[base], extra.get(base, 28))
             fsdds.write_dds(tmp, w, h, new, mips); n.data = open(tmp, 'rb').read()
             fsdds.write_png(f"{out}/ui_preview/{p.replace('/', '_')[:-4]}.png", w, h, new); done.append(p)
     visit(kids, '')

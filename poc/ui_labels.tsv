@@ -1,20 +1,20 @@
-# texture base in FS3UI.pak (states _Nor/_Ove/_Pre/_Dis) <TAB> thai label   -- tools/build_ui.py
+# texture base in FS3UI.pak (states _Nor/_Ove/_Pre/_Dis) <TAB> thai label [<TAB> extra px over the original ink width, default 28]   -- tools/build_ui.py
 Menu/M_Team	ทีม
 Menu/M_Item	ไอเทม
 Menu/M_Martial	วิชา
 Menu/M_Pet	ตราสัตว์
 Menu/M_System	ระบบ
 Menu/M_Mission	บันทึก
-Menu/M_S_Status	สถานะ
-Menu/M_S_Array	ค่ายกล
-Menu/M_S_ItemUse	ไอเทม
-Menu/M_S_Equip	อุปกรณ์
-Menu/M_S_Use	ใช้
-Menu/M_S_Study	ฝึก
-Menu/M_S_HotKey	คีย์ลัด
-Menu/M_S_Grow	เติบโต
-Menu/M_S_Auto	ออโต้เซฟ
-Menu/M_S_Save	เซฟ
-Menu/M_S_Load	โหลด
-Menu/M_S_Setup	ตั้งค่า
-Menu/M_S_Exit	ออก
+Menu/M_S_Status	สถานะ	14
+Menu/M_S_Array	ค่ายกล	14
+Menu/M_S_ItemUse	ไอเทม	14
+Menu/M_S_Equip	อุปกรณ์	14
+Menu/M_S_Use	ใช้	14
+Menu/M_S_Study	ฝึก	14
+Menu/M_S_HotKey	คีย์ลัด	14
+Menu/M_S_Grow	เติบโต	14
+Menu/M_S_Auto	ออโต้เซฟ	14
+Menu/M_S_Save	เซฟ	14
+Menu/M_S_Load	โหลด	14
+Menu/M_S_Setup	ตั้งค่า	14
+Menu/M_S_Exit	ออก	14
