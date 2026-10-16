@@ -22,17 +22,17 @@ import struct, re
 SPEC = re.compile(r'(@@[A-Za-z]+(?:\([^)]*\))?@@|%[-+ #0-9.]*[a-zA-Z]|%%)')   # kept as-is inside templates
 def _pieces(raw):
     """template -> list of str parts; odd indices are specifiers / markup (split on decoded text: Big5 trail bytes can be '@')"""
-    return SPEC.split(raw.decode('cp950'))
+    return SPEC.split(raw.decode('cp950', 'surrogateescape'))   # keys (Big5 user area FA/FB) are not in Python's cp950
 def _tmpl_strs(i, raw):
     out, k = {}, 0
     for j, part in enumerate(_pieces(raw)):
         if j % 2 == 0 and part:
             k += 1
-            if any(ord(c) >= 0x80 for c in part): out[(i, k)] = part.encode('cp950')
+            if any(ord(c) >= 0x80 for c in part): out[(i, k)] = part.encode('cp950', 'surrogateescape')
     return out
 FIXED = {'Objects.bin': (0, 4, 104, 20, 0), 'FS2_Items.bin': (40, 44, 124, 16, 0),      # count offset, first record, record size,
          'ArrayData.bin': (None, None, 636, 12, 4)}                                     # name size, name offset in the record
-HELP = ('FS2_ItemHelp.bin',)
+HELP = ('FS2_ItemHelp.bin', 'DefaultString.bin')   # same layout; DefaultString = loose CFG/ file (battle popups, mission goals)
 MULTI = {'FS2_Fighter.Bin': ((0, 2, 5, 6, 7), 0x48), 'FS2_FighterHelp.bin': ((0, 1, 2), 0x34)}   # header indices of list counts, first list
 MSG = ('Message.bin',)
 def kind(member):
@@ -78,13 +78,12 @@ def strs(member, data):
     """-> {(record, 0): raw bytes} for every non-empty string"""
     base = kind(member)
     if base in MULTI: return {(li, k): r for li, k, _, r in _multi(base, data) if r}
-    if base in MSG:
+    if base in MSG or base in HELP:
         out = {}
-        for i, r in enumerate(_msg(data)[1]):
+        for i, r in enumerate(_msg(data)[1] if base in MSG else _help(data)):
             if b'%' in r: out.update(_tmpl_strs(i, r))                       # printf template: pieces between specifiers
             elif r: out[(i, 0)] = r
         return out
-    if base in HELP: return {(i, 0): s for i, s in enumerate(_help(data)) if s}
     n, first, rec, name = _fixed(base, data)
     return {(i, 0): r for i in range(n) if (r := data[first + i * rec: first + i * rec + name].split(b'\0')[0])}
 def slot_lens(member, data):
@@ -100,20 +99,17 @@ def patch(member, data, edits):
         for key, new in edits.items():
             pos, n = at[key]; assert len(new) <= n, (member, key, len(new), n); b[pos:pos + n] = new.ljust(n, b' ')   # spaces, not NULs: the blob keeps its exact NUL layout
         return bytes(b)
-    if base in MSG:
-        start, s = _msg(data); by = {}
+    if base in MSG or base in HELP:
+        start, s = _msg(data) if base in MSG else (None, _help(data)); by = {}
         for (i, k), new in edits.items(): by.setdefault(i, {})[k] = new
         for i, e in by.items():
             if 0 in e: s[i] = e[0]; continue
             parts, k, out = _pieces(s[i]), 0, b''
             for j, part in enumerate(parts):
-                if j % 2 == 0 and part: k += 1; out += e.get(k, part.encode('cp950'))
-                else: out += part.encode('cp950')
+                if j % 2 == 0 and part: k += 1; out += e.get(k, part.encode('cp950', 'surrogateescape'))
+                else: out += part.encode('cp950', 'surrogateescape')
             s[i] = out
-        return data[:start] + b''.join(struct.pack('<I', len(x) + 1) + x + bytes(1) for x in s)
-    if base in HELP:
-        s = _help(data)
-        for (i, _), new in edits.items(): s[i] = new
+        if base in MSG: return data[:start] + b''.join(struct.pack('<I', len(x) + 1) + x + bytes(1) for x in s)
         off, o = [], 0
         for x in s: off.append(o); o += len(x) + 1
         return data[:44] + struct.pack(f'<{len(s)}I', *off) + b''.join(x + b'\0' for x in s)

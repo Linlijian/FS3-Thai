@@ -85,3 +85,6 @@ name[40] `FS2ArrayData`, `u32 groups` @40 (226), groups x (u32 first record, u32
 `MSGV2.0` + NUL, `u32` records @8 (931), `u32` strings @12 (798), 931 x 48-byte records from 16, then 798 x (`u32` length incl. NUL, cp950 bytes) ending exactly at EOF (string area @0xAEA0). No u32 in the record area lies between 1,000 and the end of the string area, so records do not point at string byte offsets; strings are addressed by index and rewritten at any length (`tools/fstables.py`). 147 strings are printf templates (`%d`, `%s`, `@@W(10)@@%s@@RW@@ ...`) and are not exported: a key would drop the inserted value. Live copy in `FS3UpdataChs.dat` (the `FS3Bin.dat` copy holds the user's old prototype).
 
 Menu labels seen as DrawTextW text (plana-a6/a7 logs): title menu, save slots, stat names, inventory tabs and headers. The top menu bar (队伍 物品 武学 ...) is not drawn as text (image).
+
+## CFG/DefaultString.bin (battle popups, mission goals) [V structure 2026-10-17]
+Loose file outside the archives, same layout as FS2_ItemHelp.bin: name[40] `DefaultString`, `u32 count` @40 (1300), offsets, tiling string blob (620 non-empty, 44 printf templates). The original is `CFG/DefaultString.bin.bak` (22,795 B); the installed 9,021 B file is the user's old prototype (markers like `L985`). Tools read `.bak` when present and write `out/CFG/DefaultString.bin`.

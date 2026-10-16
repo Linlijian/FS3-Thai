@@ -1,5 +1,5 @@
 """Export every translatable string to a TSV for translators:
-dialogue slots (Dia*/Auto*) and fstables (Objects, FS2_Items, FS2_ItemHelp). A member comes from FS3UpdataChs.dat when it is there,
+dialogue slots (Dia*/Auto*), fstables (Objects, Items, ItemHelp, Fighter(Help), ArrayData, Message) and the loose CFG/DefaultString.bin. A member comes from FS3UpdataChs.dat when it is there,
 else from FS3Bin.dat.bak -- the engine's own lookup order (open-questions Q2).
 usage: export_strings.py <game_copy> <out.tsv>
 Columns: member <TAB> block <TAB> offset_in_block <TAB> source (cp950 -> UTF-8) <TAB> thai (empty, fill in).
@@ -26,4 +26,10 @@ with open(out, 'w', encoding='utf-8', newline='\n') as f:
                 if not any(b >= 0x80 for b in raw): continue          # ASCII-only: labels / code, not text
                 src = raw.decode(fsdialog.ENC).replace('\t', ' '); n += 1; uniq.add(src); small += len(raw) < 6 and fstables.kind(i.filename) in (None, *fstables.MULTI)
                 f.write(f'{i.filename}\t{blk}\t{st}\t{src}\t\n')
+    for m in ('CFG/DefaultString.bin',):                                   # loose file outside the archives; .bak = original
+        src = f'{game}/{m}.bak' if os.path.exists(f'{game}/{m}.bak') else f'{game}/{m}'
+        for (blk, st), raw in sorted(fstables.strs(m, open(src, 'rb').read()).items()):
+            if not any(b >= 0x80 for b in raw): continue
+            src_txt = raw.decode(fsdialog.ENC).replace('\t', ' '); n += 1; uniq.add(src_txt)
+            f.write(f'{m}\t{blk}\t{st}\t{src_txt}\t\n')
 print(f'{n} strings ({len(uniq)} unique), {small} slots < 6 bytes (short keys) -> {out}')
