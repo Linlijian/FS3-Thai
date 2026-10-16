@@ -682,7 +682,7 @@ static LONG space_width(int fi, void *self, LONG h)   /* CALCRECT drops a lone s
 /* Per-panel wrap widths: the engine wraps non-dialogue text itself (item help: 14 cells per draw call), so a key only knows where
    it is drawn. wrap_rules = "h@x=px,..." (font height @ key x +-4, x 0 = any x, ">x" = x or further right; centred labels
    move with the name); "/e" after px = draw at the engine's own size there (narrow panels). First match wins, else
-   wrap_width. ":y" after x also requires the key's y (+-4): panels sharing an x (tabs above a list). Every new (key, height,
+   wrap_width. ":y" after x also requires the key's y (+-2): panels sharing an x (tabs above a list). Every new (key, height,
    x) is logged as "key N at h= x= y=" so rules can be read off the log. */
 static struct { int h, x, y, w, ge, eng; } g_wr[32];
 static int g_nwr;
@@ -711,7 +711,7 @@ static int rule_for(LONG h, LONG x, LONG y)  /* index into g_wr or -1 */
     int i;
     for (i = 0; i < g_nwr; i++)
         if (g_wr[i].h == h && (g_wr[i].x == 0 || (g_wr[i].ge ? x >= g_wr[i].x : (x >= g_wr[i].x - 4 && x <= g_wr[i].x + 4)))
-            && (g_wr[i].y == 0 || (y >= g_wr[i].y - 4 && y <= g_wr[i].y + 4))) return i;
+            && (g_wr[i].y == 0 || (y >= g_wr[i].y - 2 && y <= g_wr[i].y + 2))) return i;
     return -1;
 }
 static struct lay *layout_text(int fi, void *self, int id, LONG h, int wrap)
