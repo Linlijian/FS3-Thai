@@ -88,3 +88,6 @@ Menu labels seen as DrawTextW text (plana-a6/a7 logs): title menu, save slots, s
 
 ## CFG/DefaultString.bin (battle popups, mission goals) [V structure 2026-10-17]
 Loose file outside the archives, same layout as FS2_ItemHelp.bin: name[40] `DefaultString`, `u32 count` @40 (1300), offsets, tiling string blob (620 non-empty, 44 printf templates). The original is `CFG/DefaultString.bin.bak` (22,795 B); the installed 9,021 B file is the user's old prototype (markers like `L985`). Tools read `.bak` when present and write `out/CFG/DefaultString.bin`.
+
+## FS3UI.pak UI textures [V 2026-10-17]
+UJ pak (`UI_Chs`): Default.dds, Combat/, combo/, FsFx/, LvUp/, Map/, Menu/ (370), Vic/. DXT3/DXT5 (298 DXT5, 248 DXT3, 9 RGB32, 1 DXT1), menu labels 128x64, 1 mip, transparent with a white glow. Image-only text: top menu bar `Menu/M_{Team,Item,Martial,Pet,System,Mission}` and sub tabs `Menu/M_S_*`, each in 4 states `_Nor/_Ove/_Pre/_Dis`. Victory / level-up titles (战斗胜利, 等级提升) and 获得银两 are NOT images: DrawTextW text (Message.bin 553 / 554 / 557, drawn cell by cell at 32 px). `tools/fsdds.py` (DDS<->PNG, writes A8R8G8B8), `tools/build_ui.py` (renders Thai labels, repacks FS3UI.pak; the pak round-trips byte-identically).

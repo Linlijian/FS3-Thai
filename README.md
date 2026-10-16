@@ -73,6 +73,7 @@ Tools take `--set original|patched` where it matters (`original` = use `Pack/FS3
 | `tools/export_strings.py` | every translatable string -> translation TSV (member, block, offset, source, thai) |
 | `tools/fstables.py` | name / help tables: Objects, FS2_Items, FS2_ItemHelp, FS2_Fighter(Help), ArrayData |
 | `tools/fsexe.py` | Chinese strings hardcoded in FS3.exe (read only) -> FS3_TH_exe.txt, replaced by the proxy at draw time |
+| `tools/fsdds.py`, `tools/build_ui.py`, `poc/ui_labels.tsv` | image-only UI labels: DDS<->PNG, Thai label rendering, FS3UI.pak rebuild |
 | `tools/overflow_report.py` | proxy overflow log -> TSV addresses of translations longer than the dialogue box |
 | `tools/build_channel.py`, `tools/build_keys.py`, `tools/thaichan.py`, `tools/thaibreak.py` | Thai channel + key-expansion data builders; automatic Thai word breaks via Uniscribe |
 | `tools/build_poc.py` | first PoC: Thai written directly into a slot (shows the byte-budget limit) |
