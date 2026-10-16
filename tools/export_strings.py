@@ -7,7 +7,7 @@ build_keys.py reads this file directly; rows sharing a source reuse the first fi
 The output contains game text: keep it on your own disk (work/), never commit it."""
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import fszip, fsdialog, fstables
+import fszip, fsdialog, fstables, fsexe
 game, out = sys.argv[1:3]
 n = small = 0; uniq = set(); upd = set()
 with open(out, 'w', encoding='utf-8', newline='\n') as f:
@@ -32,4 +32,7 @@ with open(out, 'w', encoding='utf-8', newline='\n') as f:
             if not any(b >= 0x80 for b in raw): continue
             src_txt = raw.decode(fsdialog.ENC).replace('\t', ' '); n += 1; uniq.add(src_txt)
             f.write(f'{m}\t{blk}\t{st}\t{src_txt}\t\n')
+    for (blk, st), raw in sorted(fsexe.strs(open(f'{game}/FS3.exe', 'rb').read()).items()):   # drawn-text replacement (proxy)
+        src_txt = raw.decode(fsdialog.ENC).replace('\t', ' ').replace('\n', ' '); n += 1; uniq.add(src_txt)
+        f.write(f'FS3.exe\t{blk}\t{st}\t{src_txt}\t\n')
 print(f'{n} strings ({len(uniq)} unique), {small} slots < 6 bytes (short keys) -> {out}')
