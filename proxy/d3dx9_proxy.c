@@ -123,26 +123,27 @@ static void load_config(void)
 {
     char v[512];
     /* GetPrivateProfileString resolves a bare filename against the Windows
-       directory, so the path has to be absolute. */
-    if (GetPrivateProfileStringA("hook", "force_charset", "222",
+       directory, so the path has to be absolute. Defaults = the in-game tested FS3_TH_hook.ini, so a missing ini is
+       harmless (plana-a28: no ini -> old PoC defaults, charset 222 crashed on the first Thai mark and disabled Thai). */
+    if (GetPrivateProfileStringA("hook", "force_charset", "-1",
                                  v, sizeof v, g_ini) > 0)
         g_force_charset = atoi(v);
     GetPrivateProfileStringA("hook", "force_face", "",
                              g_force_face, sizeof g_force_face, g_ini);
-    g_log_textout = GetPrivateProfileIntA("hook", "log_textout", 1, g_ini);
-    g_log_mb2wc = GetPrivateProfileIntA("hook", "log_mb2wc", 1, g_ini);
-    g_max_lines = GetPrivateProfileIntA("hook", "log_max_lines", 4000, g_ini);
-    g_log_draw = GetPrivateProfileIntA("hook", "log_drawtext", 1, g_ini);
+    g_log_textout = GetPrivateProfileIntA("hook", "log_textout", 0, g_ini);
+    g_log_mb2wc = GetPrivateProfileIntA("hook", "log_mb2wc", 0, g_ini);
+    g_max_lines = GetPrivateProfileIntA("hook", "log_max_lines", 200000, g_ini);
+    g_log_draw = GetPrivateProfileIntA("hook", "log_drawtext", 0, g_ini);
     g_thai_layout = GetPrivateProfileIntA("hook", "thai_layout", 1, g_ini);
-    GetPrivateProfileStringA("hook", "thai_face", "Tahoma", g_thai_face, sizeof g_thai_face, g_ini);
-    g_thai_scale = GetPrivateProfileIntA("hook", "thai_scale_pct", 130, g_ini);
+    GetPrivateProfileStringA("hook", "thai_face", "", g_thai_face, sizeof g_thai_face, g_ini);
+    g_thai_scale = GetPrivateProfileIntA("hook", "thai_scale_pct", 155, g_ini);
     g_thai_dy = GetPrivateProfileIntA("hook", "thai_dy", 999, g_ini);
     g_thai_charset = GetPrivateProfileIntA("hook", "thai_charset", 1, g_ini);
-    g_engine_glyphs = GetPrivateProfileIntA("hook", "thai_use_engine_font", 1, g_ini);
-    g_wrap_w = GetPrivateProfileIntA("hook", "wrap_width", 504, g_ini);
-    g_pitch_pct = GetPrivateProfileIntA("hook", "line_pitch_pct", 108, g_ini);   /* default: own Thai font crashed d3dx9_25 on marks (PoC v4) */
+    g_engine_glyphs = GetPrivateProfileIntA("hook", "thai_use_engine_font", 0, g_ini);
+    g_wrap_w = GetPrivateProfileIntA("hook", "wrap_width", 580, g_ini);
+    g_pitch_pct = GetPrivateProfileIntA("hook", "line_pitch_pct", 90, g_ini);
     g_box_lines = GetPrivateProfileIntA("hook", "box_lines", 0, g_ini);
-    GetPrivateProfileStringA("hook", "wrap_rules", "", v, sizeof v, g_ini); load_wrap_rules(v);
+    GetPrivateProfileStringA("hook", "wrap_rules", "16@288:330=300/e,16@328:363=300/e,20@294:70=300/e,20@294:98=300/e,20@294:126=300/e,20@294:154=300/e,20@294:182=300/e,24@55=300/e,20@32:209=300/e,20@>240:104=300/e,24@>440:101=300/e,20@>220:111=300/e,20@>220:139=300/e,20@328=300/e,20@388=300/e,12@689=96,12@673=112,12@662=128,24@>640=130/e,20@>640=135/e,20@260=140/e,12@17=72/e,12@>730:85=62/e,12@0=168", v, sizeof v, g_ini); load_wrap_rules(v);
 }
 
 /* Resolve paths next to this DLL rather than the process CWD. */
