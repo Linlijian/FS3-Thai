@@ -54,10 +54,71 @@ def render(px, w, h, text, extra=28):
             if not fa: continue
             out[(y * w + x) * 4:(y * w + x) * 4 + 4] = bytes([(c[k] * ta + 255 * (fa - ta)) // fa for k in range(3)] + [fa])
     return bytes(out)
+def render_region(px, w, h, rect, text):
+    """atlas mode: rebuild the background inside rect (x,y,w,h) from its border (Coons patch, all 4 channels), then draw the
+    Thai label there with the original's fill colour and, when the original has one, its outline colour."""
+    rx, ry, rw, rh = rect; out = bytearray(px)
+    P = lambda x, y: px[(min(h - 1, max(0, y)) * w + min(w - 1, max(0, x))) * 4:(min(h - 1, max(0, y)) * w + min(w - 1, max(0, x))) * 4 + 4]
+    L = [P(rx - 1, y) for y in range(ry, ry + rh)]; R = [P(rx + rw, y) for y in range(ry, ry + rh)]
+    T = [P(x, ry - 1) for x in range(rx, rx + rw)]; B = [P(x, ry + rh) for x in range(rx, rx + rw)]
+    c00, c10, c01, c11 = P(rx - 1, ry - 1), P(rx + rw, ry - 1), P(rx - 1, ry + rh), P(rx + rw, ry + rh)
+    bg = {}
+    for j in range(rh):
+        v = (j + 1) / (rh + 1)
+        for i in range(rw):
+            u = (i + 1) / (rw + 1)
+            bg[i, j] = [max(0, min(255, round((1 - u) * L[j][k] + u * R[j][k] + (1 - v) * T[i][k] + v * B[i][k]
+                        - ((1 - u) * (1 - v) * c00[k] + u * (1 - v) * c10[k] + (1 - u) * v * c01[k] + u * v * c11[k])))) for k in range(4)]
+    ink, hit = [], set()                                  # original pixels that differ from the smooth background estimate
+    for (i, j), b in bg.items():
+        o = P(rx + i, ry + j)
+        if sum(abs(o[k] * o[3] - b[k] * b[3]) for k in range(3)) // 255 + abs(o[3] - b[3]) > 90:
+            hit.add((rx + i, ry + j))
+            if o[3] > 128: ink.append(o)
+    lum = lambda c: c[0] * 3 + c[1] * 6 + c[2]
+    ink.sort(key=lum); half = len(ink) // 2
+    dark, light = ink[:max(1, len(ink) // 4)], ink[-max(1, len(ink) // 4):]
+    avg = lambda cs: [sum(c[k] for c in cs) // len(cs) for k in range(3)]
+    bgl = sum(lum(b) for b in bg.values()) / max(1, len(bg))
+    nd = sum(1 for c in ink if abs(lum(c) - lum(dark[0])) < abs(lum(c) - lum(light[-1])))
+    fill, line = (avg(dark), avg(light)) if nd >= len(ink) - nd else (avg(light), avg(dark))
+    outline = abs(lum(line) - bgl) > 600                  # the outline colour stands out from the background
+    size = int(rh * 0.95)
+    while True:
+        a, tw = mask(text, w, h, size, rx + rw // 2, ry + rh // 2)
+        if tw <= rw - 2 or size <= 7: break
+        size -= 1
+    hole = {(x + dx, y + dy) for x, y in hit for dx in (-2, -1, 0, 1, 2) for dy in (-2, -1, 0, 1, 2)
+            if rx <= x + dx < rx + rw and ry <= y + dy < ry + rh}         # ink + its glow, kept inside the rect
+    while hole:                                           # onion-peel inpainting: fill from known neighbours inward
+        ring = {}
+        for x, y in hole:
+            nb = [out[(yy * w + xx) * 4:(yy * w + xx) * 4 + 4] for xx in (x - 1, x, x + 1) for yy in (y - 1, y, y + 1)
+                  if 0 <= xx < w and 0 <= yy < h and (xx, yy) not in hole]
+            if nb:
+                al = sum(c[3] for c in nb)
+                ring[x, y] = bytes([sum(c[k] * c[3] for c in nb) // al if al else 0 for k in range(3)] + [al // len(nb)])
+        if not ring: break
+        for (x, y), c in ring.items(): out[(y * w + x) * 4:(y * w + x) * 4 + 4] = c
+        hole -= set(ring)
+    for y in range(max(0, ry - 1), min(h, ry + rh + 1)):
+        for x in range(max(0, rx - 1), min(w, rx + rw + 1)):
+            ta = a[y * w + x]; ga = 0
+            if outline: ga = max(a[yy * w + xx] for yy in range(max(0, y - 1), min(h, y + 2)) for xx in range(max(0, x - 1), min(w, x + 2)))
+            o = list(out[(y * w + x) * 4:(y * w + x) * 4 + 4])
+            for col, al in ((line, ga), (fill, ta)):
+                if not al: continue
+                na = al + o[3] * (255 - al) // 255
+                o = [(col[k] * al + o[k] * o[3] * (255 - al) // 255) // max(1, na) for k in range(3)] + [na]
+            out[(y * w + x) * 4:(y * w + x) * 4 + 4] = bytes(o)
+    return bytes(out)
 if __name__ == '__main__':
     game, labels, out = sys.argv[1:4]
     rows = [ln.rstrip('\n').split('\t') for ln in open(labels, encoding='utf-8') if ln.strip() and not ln.startswith('#')]
-    want = {r[0]: r[1] for r in rows}; extra = {r[0]: int(r[2]) for r in rows if len(r) > 2}
+    want = {r[0]: r[1] for r in rows if '@' not in r[0]}; extra = {r[0]: int(r[2]) for r in rows if len(r) > 2}
+    regions = {}                                          # 'Dir/File.dds@x,y,w,h' rows: atlas regions, several per file
+    for r in rows:
+        if '@' in r[0]: f, rc = r[0].split('@'); regions.setdefault(f, []).append((tuple(map(int, rc.split(','))), r[1]))
     buf = open(f'{game}/Pack/FS3UI.pak', 'rb').read(); (kids, pname, ver), _, _ = ujpak.read_tree(buf)
     os.makedirs(f'{out}/ui_preview', exist_ok=True); edit_dir = os.path.join(os.path.dirname(os.path.abspath(out)), 'ui_edit'); done = []
     def visit(nodes, path):
@@ -65,10 +126,13 @@ if __name__ == '__main__':
             p = f'{path}/{n.name}' if path else n.name
             if n.children is not None: visit(n.children, p); continue
             base = p.rsplit('_', 1)[0] if p.lower().endswith('.dds') and '_' in p else None
-            if base not in want: continue
+            if base not in want and p not in regions: continue
             tmp = f'{out}/ui_preview/_orig.dds'; open(tmp, 'wb').write(n.data); w, h, px, mips = fsdds.read(tmp)
             ed = os.path.join(edit_dir, p.replace('/', '_')[:-4] + '.png')
             if os.path.exists(ed): ew, eh, new = fsdds.read_png(ed); assert (ew, eh) == (w, h), ed
+            elif p in regions:
+                new = px
+                for rc, t in regions[p]: new = render_region(new, w, h, rc, t)
             else: new = render(px, w, h, want[base], extra.get(base, 28))
             fsdds.write_dds(tmp, w, h, new, mips); n.data = open(tmp, 'rb').read()
             fsdds.write_png(f"{out}/ui_preview/{p.replace('/', '_')[:-4]}.png", w, h, new); done.append(p)
@@ -76,4 +140,4 @@ if __name__ == '__main__':
     os.remove(f'{out}/ui_preview/_orig.dds')
     blob = ujpak.build(kids, pname, ver); open(f'{out}/FS3UI.pak', 'wb').write(blob)
     (k2, _, _), _, _ = ujpak.read_tree(blob)                      # verify: parses, every replaced file is a DDS of the right size
-    print(f'{len(done)} textures for {len(want)} labels -> {out}/FS3UI.pak ({len(blob)} B); missing: {sorted(set(want) - {d.rsplit("_", 1)[0] for d in done})}')
+    print(f'{len(done)} textures for {len(want)} labels -> {out}/FS3UI.pak ({len(blob)} B); missing: {sorted((set(want) - {d.rsplit("_", 1)[0] for d in done}) | (set(regions) - set(done)))}')

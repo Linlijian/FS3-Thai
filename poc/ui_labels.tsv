@@ -18,3 +18,36 @@ Menu/M_S_Save	เซฟ	14
 Menu/M_S_Load	โหลด	14
 Menu/M_S_Setup	ตั้งค่า	14
 Menu/M_S_Exit	ออก	14
+# atlas regions: <file.dds>@x,y,w,h <TAB> thai (background rebuilt from the rect border)
+Combat/DlgMainDisk.dds@30,79,27,19	ท่า
+Combat/DlgMainDisk.dds@86,79,27,19	ท่า
+Combat/DlgMainDisk.dds@254,79,27,19	หนี
+Combat/DlgMainDisk.dds@310,79,27,19	หนี
+Combat/DlgMainDisk.dds@140,77,30,24	ท่า
+Combat/DlgMainDisk.dds@196,77,30,24	ท่า
+Combat/DlgMainDisk.dds@363,77,30,24	หนี
+Combat/DlgMainDisk.dds@419,77,30,24	หนี
+Combat/DlgMainDisk.dds@30,139,27,19	ออโต้
+Combat/DlgMainDisk.dds@86,139,27,19	ออโต้
+Combat/DlgMainDisk.dds@254,139,27,19	ของ
+Combat/DlgMainDisk.dds@310,139,27,19	ของ
+Combat/DlgMainDisk.dds@140,137,30,24	ออโต้
+Combat/DlgMainDisk.dds@196,137,30,24	ออโต้
+Combat/DlgMainDisk.dds@363,137,30,24	ของ
+Combat/DlgMainDisk.dds@419,137,30,24	ของ
+Combat/DlgMainDisk.dds@30,199,27,19	ตี
+Combat/DlgMainDisk.dds@86,199,27,19	ตี
+Combat/DlgMainDisk.dds@140,197,30,24	ตี
+Combat/DlgMainDisk.dds@196,197,30,24	ตี
+Menu/RD_MoneyPannel.dds@43,12,58,34	เงิน
+Menu/RD_MoneyPannel.dds@300,12,50,34	ตำลึง
+Menu/SM_TitlePannel.dds@12,5,154,40	จัดทีม
+Combat/Egis.dds@0,0,97,25	กำลังเสริมศัตรู
+Menu/AS_ArrayName0000.dds@28,6,136,40	มังกรขด
+Menu/AS_ArrayName0001.dds@28,6,136,40	เกราะทมิฬ
+Menu/AS_ArrayName0002.dds@28,6,136,40	ฟ้าเหลือง
+Menu/AS_ArrayName0003.dds@28,6,136,40	เคลื่อนเร็ว
+Menu/AS_ArrayName0004.dds@28,6,136,40	ปราบมาร
+Menu/AS_ArrayName0005.dds@28,6,136,40	แปดประตู
+Menu/AS_ArrayName0006.dds@28,6,136,40	เขี้ยวหมาป่า
+Menu/AS_ArrayName0007.dds@28,6,136,40	ยมโลก
