@@ -10,7 +10,7 @@ Fantasia Sango 3** (UserJoy, Steam build), without modifying or unpacking `FS3.e
 item names and descriptions (inventory, equip, shop, hotkeys, battle), skill names / descriptions (use, train, hotkeys,
 battle labels), formation names. Thai is drawn at 155 % of the game font, with ASCII at the game's own size, word-wrapped
 per panel (`wrap_rules` in the ini). Not yet: menu / UI labels (some are images), enemy formation names, an installer.
-Open items and evidence for every step: [docs/open-questions.md](docs/open-questions.md).
+Open items and evidence for every step: [docs/open-questions.md](docs/open-questions.md); the detailed plan for the remaining work (installer, Mission.bin, images, known limits): [docs/next-steps.md](docs/next-steps.md).
 
 ## Legal / scope
 * No game assets (text, images, audio, models, binaries) are in this repository, and none must be added. Translation files
