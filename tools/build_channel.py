@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fszip, thaichan
 game, oldmap, out = sys.argv[1:4]
 t2b = {k: v for k, v in thaichan.load_map(oldmap)[0].items() if 0x0E00 <= ord(k) <= 0x0E7F}   # Thai letters only (re-runnable on a v3 map)
-src = f'{game}/Pack/FS3Bin.dat.bak'; raw = open(src, 'rb').read(); z = fszip.open_fszip_bytes(raw)
+src = fszip.orig(game, 'Pack/FS3Bin.dat'); raw = open(src, 'rb').read(); z = fszip.open_fszip_bytes(raw)
 idx = bytearray(z.read('Bin/Code/BIG2GB.idx'))
 w = lambda c: ((c & 0xff) << 8) | (c >> 8)
 produced = {bytes(idx[i*2:i*2+2]) for i in range(0x10000)}

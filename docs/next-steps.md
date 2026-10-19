@@ -20,6 +20,12 @@
 
 ## 1. ตัวติดตั้ง (installer)
 
+> **สถานะ 2026-10-19: ตัวติดตั้งทำเสร็จและทดสอบแล้ว (ยกเว้น Python ฝัง)** — `installer/install.py` + `installer/launcher.c` (install.exe / uninstall.exe) + `tools/pack_translations.py` + `tools/make_dist.py`
+> สร้างแพ็กเกจ: `python -I tools/pack_translations.py` ถูกเรียกโดย `make_dist.py <game_copy> <strings_all.tsv> <proxy.dll> <launcher.exe> <out> [python-embed.zip]`
+> ทดสอบบนเกมสะอาดจำลอง (`work/testgame`): ไฟล์ที่ติดตั้งตรงกับ plana-a30 ทุกไบต์, ติดตั้งซ้ำได้ผลเดิม, uninstall คืนไฟล์ต้นฉบับครบ, ไฟล์ไม่ตรง hash → หยุดโดยไม่แก้อะไร
+> เครื่องมือ build อ่านต้นฉบับผ่าน `fszip.orig()` (`$FS3_ORIG` > `.bak` > ไฟล์ปกติ)
+> ยังไม่ทำ: ฝัง Python (ต้องดาวน์โหลด embeddable zip), Q4 (hash `FS3Bin.dat` / `DefaultString.bin` ของ Steam จริงยังไม่ได้ยืนยัน — ถ้าไม่ตรงผู้เล่นจะเจอข้อความให้ Verify integrity)
+
 ### 1.1 ทำไมต้องมี
 * รอบ plana-a28: `FS3_TH_hook.ini` หายจากโฟลเดอร์เกม → ภาษาไทยหายทั้งเกม (แก้แล้วโดยให้ค่าตั้งต้นใน DLL = ค่าที่ทดสอบแล้ว แต่ไฟล์อื่นหายก็ยังพังได้)
 * รอบ plana-a17 / a26: ไฟล์ prototype เก่า (`CFG/DefaultString.bin`, `CFG/Mission.bin`) ค้างอยู่ ทำให้เห็น `L985`, `L706`

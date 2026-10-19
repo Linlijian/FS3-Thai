@@ -7,7 +7,7 @@ added, and the texture is written as uncompressed A8R8G8B8 DDS. A hand-edited <o
 is used instead when present. Writes <out_dir>/FS3UI.pak and preview PNGs in <out_dir>/ui_preview/."""
 import os, sys, ctypes as C, ctypes.wintypes as W
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import ujpak, fsdds
+import ujpak, fsdds, fszip
 FACE = 'Leelawadee UI'
 g, u = C.WinDLL('gdi32'), C.WinDLL('user32')
 for f, r, a in ((g.CreateCompatibleDC, C.c_void_p, [C.c_void_p]), (g.CreateFontW, C.c_void_p, None), (g.SelectObject, C.c_void_p, [C.c_void_p, C.c_void_p]),
@@ -119,7 +119,7 @@ if __name__ == '__main__':
     regions = {}                                          # 'Dir/File.dds@x,y,w,h' rows: atlas regions, several per file
     for r in rows:
         if '@' in r[0]: f, rc = r[0].split('@'); regions.setdefault(f, []).append((tuple(map(int, rc.split(','))), r[1]))
-    buf = open(f'{game}/Pack/FS3UI.pak', 'rb').read(); (kids, pname, ver), _, _ = ujpak.read_tree(buf)
+    buf = open(fszip.orig(game, 'Pack/FS3UI.pak'), 'rb').read(); (kids, pname, ver), _, _ = ujpak.read_tree(buf)
     os.makedirs(f'{out}/ui_preview', exist_ok=True); edit_dir = os.path.join(os.path.dirname(os.path.abspath(out)), 'ui_edit'); done = []
     def visit(nodes, path):
         for n in nodes:

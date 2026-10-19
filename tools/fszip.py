@@ -67,3 +67,9 @@ def write_like(src_zip, src_raw, replace=None, level=6):
     cdo = len(out); out += cd
     out += struct.pack('<4sHHHHIIH', b'\x03\x05\x05\x06', 0, 0, len(infos), len(infos), len(cd), cdo, 0)
     return bytes(out)
+def orig(game, rel):
+    """path of the ORIGINAL (unmodified) game file `rel`: $FS3_ORIG/<rel> (the installer's backup dir) > <game>/<rel>.bak > <game>/<rel>"""
+    import os
+    b = os.environ.get('FS3_ORIG')
+    if b and os.path.exists(f'{b}/{rel}'): return f'{b}/{rel}'
+    return f'{game}/{rel}.bak' if os.path.exists(f'{game}/{rel}.bak') else f'{game}/{rel}'

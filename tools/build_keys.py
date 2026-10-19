@@ -15,11 +15,11 @@ t2b, _ = thaichan.load_map(mapf)
 assert chr(0xE000) in t2b and chr(0xE17F) in t2b and chr(0xE27F) in t2b, 'map has no (short) KEY codes - run build_channel.py first'
 rows = [ln.rstrip('\n').split('\t') for ln in open(tsv, encoding='utf-8') if ln.strip() and not ln.startswith('#')]
 by_src = {r[3]: r[4] for r in reversed(rows) if len(r) == 5 and r[4].strip()}      # first filled row wins
-ARC = {'FS3UpdataChs.dat': f'{game}/Pack/FS3UpdataChs.dat', 'FS3Bin.dat': f'{game}/Pack/FS3Bin.dat.bak'}
+ARC = {'FS3UpdataChs.dat': fszip.orig(game, 'Pack/FS3UpdataChs.dat'), 'FS3Bin.dat': fszip.orig(game, 'Pack/FS3Bin.dat')}
 raw = {a: open(p, 'rb').read() for a, p in ARC.items()}; zz = {a: fszip.open_fszip_bytes(b) for a, b in raw.items()}
 upd = set(zz['FS3UpdataChs.dat'].namelist())
 arc_of = lambda member: 'FS3UpdataChs.dat' if member in upd else 'FS3Bin.dat'
-LOOSE = {m: f'{game}/{m}.bak' if os.path.exists(f'{game}/{m}.bak') else f'{game}/{m}' for m in ('CFG/DefaultString.bin',)}   # outside the archives; .bak = original
+LOOSE = {m: fszip.orig(game, m) for m in ('CFG/DefaultString.bin',)}   # outside the archives; .bak = original
 read = lambda member: open(LOOSE[member], 'rb').read() if member in LOOSE else zz[arc_of(member)].read(member)
 slots = {}                                                                          # member -> {(block, offset): usable bytes}
 def slot_len(member, blk, off):
