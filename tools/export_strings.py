@@ -1,7 +1,7 @@
 """Export every translatable string to a TSV for translators:
 dialogue slots (Dia*/Auto*), fstables (Objects, Items, ItemHelp, Fighter(Help), ArrayData, Message) and the loose CFG/DefaultString.bin. A member comes from FS3UpdataChs.dat when it is there,
 else from FS3Bin.dat.bak -- the engine's own lookup order (open-questions Q2).
-usage: export_strings.py <game_copy> <out.tsv>
+usage: export_strings.py <game_copy> <out.tsv>   (originals via fszip.orig: $FS3_ORIG > .bak > plain, so a game with the mod installed works too)
 Columns: member <TAB> block <TAB> offset_in_block <TAB> source (cp950 -> UTF-8) <TAB> thai (empty, fill in).
 build_keys.py reads this file directly; rows sharing a source reuse the first filled translation.
 The output contains game text: keep it on your own disk (work/), never commit it."""
@@ -12,8 +12,8 @@ game, out = sys.argv[1:3]
 n = small = 0; uniq = set(); upd = set()
 with open(out, 'w', encoding='utf-8', newline='\n') as f:
     f.write('# member\tblock\toffset_in_block\tsource\tthai ( | = allowed break, * = forced break; empty = keep original)\n')
-    for arc in ('FS3UpdataChs.dat', 'FS3Bin.dat.bak'):
-        z = fszip.open_fszip(f'{game}/Pack/{arc}')
+    for arc in ('FS3UpdataChs.dat', 'FS3Bin.dat'):
+        z = fszip.open_fszip(fszip.orig(game, f'Pack/{arc}'))
         for i in z.infolist():
             if i.is_dir() or i.filename.lower() in upd: continue      # shadowed by FS3UpdataChs.dat
             if arc == 'FS3UpdataChs.dat': upd.add(i.filename.lower())
@@ -27,7 +27,7 @@ with open(out, 'w', encoding='utf-8', newline='\n') as f:
                 src = raw.decode(fsdialog.ENC).replace('\t', ' '); n += 1; uniq.add(src); small += len(raw) < 6 and fstables.kind(i.filename) in (None, *fstables.MULTI)
                 f.write(f'{i.filename}\t{blk}\t{st}\t{src}\t\n')
     for m in ('CFG/DefaultString.bin',):                                   # loose file outside the archives; .bak = original
-        src = f'{game}/{m}.bak' if os.path.exists(f'{game}/{m}.bak') else f'{game}/{m}'
+        src = fszip.orig(game, m)
         for (blk, st), raw in sorted(fstables.strs(m, open(src, 'rb').read()).items()):
             if not any(b >= 0x80 for b in raw): continue
             src_txt = raw.decode(fsdialog.ENC).replace('\t', ' '); n += 1; uniq.add(src_txt)

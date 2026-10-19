@@ -203,3 +203,12 @@ cd /d/claude.ai/fs3 && git am --keep-cr <scratch>/patches/*.patch
 git -C /d/claude.ai/fs3 rev-parse HEAD^{tree}; git -C <game> rev-parse HEAD^{tree}
 ```
 ยังไม่ push ขึ้น GitHub (`linlijian/fs3-thai`) — push เมื่อผู้ใช้สั่งเท่านั้น
+
+## ภาคผนวก: แปลเองด้วย tools/tr.py (2026-10-19)
+```bash
+python -I tools/tr.py export . work/tr_out     # แตกข้อความทั้งหมดเป็นไฟล์ละไฟล์เกม (+ INDEX.tsv, README.txt); คำแปลเดิมใน work/strings_master.tsv ถูกเติมให้
+python -I tools/tr.py status work/tr_out        # ความคืบหน้าต่อไฟล์
+python -I tools/tr.py import work/tr_out work/strings_master.tsv   # ตรวจรหัส @@..@@ / %s แล้วรวมเข้า master (สำรอง .prev)
+```
+แก้เฉพาะคอลัมน์สุดท้าย (thai) ในไฟล์ใต้ `work/tr_out/`; แถวที่รหัสผิดจะถูกปฏิเสธพร้อมเลขบรรทัด ที่เหลือไม่เสีย
+แล้ว build ชุดทดสอบด้วย `build_channel.py` → `build_keys.py <game> <map> work/strings_master.tsv <out>` → `build_ui.py` ตามเดิม (ข้อ 1.3 ขั้น 5)
