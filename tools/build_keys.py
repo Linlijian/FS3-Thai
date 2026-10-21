@@ -89,11 +89,14 @@ with open(f'{out}/FS3_TH_exe.txt', 'w', encoding='utf-8', newline='\n') as f:
         thai = r[-1] if '|' in r[-1] else thaibreak.breaks(r[-1])
         f.write(f"{fsexe.drawn(exe_strs[(int(r[1]), 0)], big2gb)}\t{thai.replace('|', chr(0x200b))}\n")
     seen_p = set(); nn = 0                                                          # names / places: old saves and some NPC labels hold
-    for r in rows:                                                                  # the Chinese name itself -> replace it where it is drawn
-        if len(r) < 5 or r[0].rsplit('/', 1)[-1] not in ('Objects.bin', 'KINDLE.BIN', 'FS3Maps.BIN'): continue
-        thai = r[4] or by_src.get(r[3], '')
-        if not thai.strip() or '%' in r[3] or len(r[3].strip()) < 2: continue
-        try: pat = fsexe.drawn(r[3].encode('cp950'), big2gb)
+    names = {}                                                                      # the Chinese name itself -> replace it where it is drawn
+    for r in rows:                                                                  # (source read from the game file: the player package has no source column)
+        if r[0].rsplit('/', 1)[-1] not in ('Objects.bin', 'KINDLE.BIN', 'FS3Maps.BIN'): continue
+        if r[0] not in names: names[r[0]] = fstables.strs(r[0], read(r[0]))
+        raw = names[r[0]].get((int(r[1]), int(r[2])), b''); thai = r[-1] if len(r) >= 4 else ''
+        if len(r) == 5 and not thai.strip(): thai = by_src.get(r[3], '')
+        if not thai.strip() or b'%' in raw or len(raw.strip()) < 4: continue
+        try: pat = fsexe.drawn(raw, big2gb)
         except (UnicodeError, IndexError): continue
         if pat in seen_p or '\t' in pat: continue
         seen_p.add(pat); nn += 1; f.write(f"{pat}\t{(thai if '|' in thai else thaibreak.breaks(thai)).replace('|', chr(0x200b))}\n")

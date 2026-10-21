@@ -8,7 +8,7 @@ try: sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception: pass
 APP = os.path.abspath(sys.argv[0]); HERE = os.path.dirname(APP); MOD = os.path.join(HERE, 'mod')
 REPLACED = ['Pack/FS3Bin.dat', 'Pack/FS3UpdataChs.dat', 'Pack/FS3UI.pak', 'CFG/DefaultString.bin', 'CFG/Mission.bin']   # originals backed up, rebuilt
-CHECKED = REPLACED + ['FS3.exe']                                                                      # must match source_hashes.txt
+CHECKED = [r for r in REPLACED if r != 'CFG/Mission.bin'] + ['CFG/Mission.bnk.bin', 'FS3.exe']   # Mission.bin is built from the game's own Mission.bnk.bin                                                                      # must match source_hashes.txt
 PLACED = ['FS3_TH_map.txt', 'FS3_TH_text.txt', 'FS3_TH_exe.txt']                                      # generated, dropped next to FS3.exe
 OWN = PLACED + ['FS3_TH_hook.ini', 'FS3_TH_hook.log', 'FS3_TH_installed.txt', 'FS3_TH_hook.ini.old']
 class Fail(Exception): pass

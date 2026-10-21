@@ -70,9 +70,9 @@ def write_like(src_zip, src_raw, replace=None, level=6):
 def orig(game, rel):
     """path of the ORIGINAL (unmodified) game file `rel`: $FS3_ORIG/<rel> > <game>/FS3_TH_backup/<rel> (installer) > <game>/<rel>.bak > <game>/<rel>"""
     import os
+    alt = {'CFG/Mission.bin': 'CFG/Mission.bnk.bin'}.get(rel)          # the game's own pristine copy (Mission.bin may be modified)
+    if alt and os.path.exists(f'{game}/{alt}'): return f'{game}/{alt}'
     b = os.environ.get('FS3_ORIG')
     if b and os.path.exists(f'{b}/{rel}'): return f'{b}/{rel}'
-    alt = {'CFG/Mission.bin': 'CFG/Mission.bnk.bin'}.get(rel)                                         # the game's own pristine copy
-    if alt and os.path.exists(f'{game}/{alt}'): return f'{game}/{alt}'
     if os.path.exists(f'{game}/FS3_TH_backup/{rel}'): return f'{game}/FS3_TH_backup/{rel}'            # the installer's backup
     return f'{game}/{rel}.bak' if os.path.exists(f'{game}/{rel}.bak') else f'{game}/{rel}'
