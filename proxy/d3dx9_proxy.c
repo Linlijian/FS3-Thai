@@ -84,6 +84,7 @@ static int g_max_lines = 4000;
 /* Named hooklog, not logf -- logf() is the float logarithm in math.h. */
 static void install_hooks(void);
 static void load_wrap_rules(const char *v);
+static void load_markup_colors(const char *v);
 static unsigned long long fnv(unsigned long long h, const void *p, int n);
 static int first_time(unsigned long long h);
 
@@ -121,7 +122,7 @@ static void log_bytes(const char *tag, const unsigned char *p, int n)
 
 static void load_config(void)
 {
-    char v[512];
+    char v[1024];
     /* GetPrivateProfileString resolves a bare filename against the Windows
        directory, so the path has to be absolute. Defaults = the in-game tested FS3_TH_hook.ini, so a missing ini is
        harmless (plana-a28: no ini -> old PoC defaults, charset 222 crashed on the first Thai mark and disabled Thai). */
@@ -136,14 +137,15 @@ static void load_config(void)
     g_log_draw = GetPrivateProfileIntA("hook", "log_drawtext", 0, g_ini);
     g_thai_layout = GetPrivateProfileIntA("hook", "thai_layout", 1, g_ini);
     GetPrivateProfileStringA("hook", "thai_face", "", g_thai_face, sizeof g_thai_face, g_ini);
-    g_thai_scale = GetPrivateProfileIntA("hook", "thai_scale_pct", 155, g_ini);
+    g_thai_scale = GetPrivateProfileIntA("hook", "thai_scale_pct", 120, g_ini);
     g_thai_dy = GetPrivateProfileIntA("hook", "thai_dy", 999, g_ini);
     g_thai_charset = GetPrivateProfileIntA("hook", "thai_charset", 1, g_ini);
     g_engine_glyphs = GetPrivateProfileIntA("hook", "thai_use_engine_font", 0, g_ini);
     g_wrap_w = GetPrivateProfileIntA("hook", "wrap_width", 580, g_ini);
     g_pitch_pct = GetPrivateProfileIntA("hook", "line_pitch_pct", 90, g_ini);
     g_box_lines = GetPrivateProfileIntA("hook", "box_lines", 0, g_ini);
-    GetPrivateProfileStringA("hook", "wrap_rules", "16@288:330=300/e,16@328:363=300/e,20@294:70=300/e,20@294:98=300/e,20@294:126=300/e,20@294:154=300/e,20@294:182=300/e,24@55=300/e,20@32:209=300/e,20@>240:104=300/e,24@>440:101=300/e,20@>220:111=300/e,20@>220:139=300/e,20@328=300/e,20@388=300/e,12@689=96,12@673=112,12@662=128,24@>640=130/e,20@>640=135/e,20@260=140/e,12@17=72/e,12@>730:85=62/e,12@0=168", v, sizeof v, g_ini); load_wrap_rules(v);
+    GetPrivateProfileStringA("hook", "markup_colors", "1:ff2374d8,9:fff5002d", v, sizeof v, g_ini); load_markup_colors(v);
+    GetPrivateProfileStringA("hook", "wrap_rules", "20@>330:204=300/e,24@>370:247=300/e,12@600=300/e,12@680=300/e,16@10:463=300/e,16@>30:463=300/e,16@288:330=300/e,16@328:363=300/e,20@294:70=300/e,20@294:98=300/e,20@294:126=300/e,20@294:154=300/e,20@294:182=300/e,24@55=300/e,20@32:209=300/e,20@>240:104=300/e,24@>440:101=300/e,20@>220:111=300/e,20@>220:139=300/e,20@328=300/e,20@388=300/e,12@689=96,12@673=112,12@662=128,24@>640=130/e,20@>640=135/e,20@260=140/e,12@17=72/e,12@>730:85=62/e,12@0=168", v, sizeof v, g_ini); load_wrap_rules(v);
 }
 
 /* Resolve paths next to this DLL rather than the process CWD. */
@@ -630,7 +632,7 @@ static LONG thai_piece(int k, int fi, void *self, void *spr, LPCWSTR s, int n, L
 static WCHAR *g_txt[MAXID];
 static int g_wrap_w = 504;               /* px: 21 CJK cells, the widest line the original authors used */
 static int g_pitch_pct = 108;            /* 26 px pitch for the 24 px dialogue font (measured, text-pipeline.md) */
-static struct lay { int id, fi, wrap; void *font; LONG h, wend; int n; struct { short x, y, st, len; } c[MAXCL]; } g_lay[64];   /* menus show dozens of labels: 8 entries re-laid them out every frame */
+static struct lay { int id, fi, wrap; void *font; LONG h, wend; int n; struct { short x, y, st, len; unsigned char ci; } c[MAXCL]; } g_lay[64];   /* menus show dozens of labels: 8 entries re-laid them out every frame */
 static int g_lay_next, g_keys_off, g_box_lines, g_quiet;   /* box_lines: overflow check limit (0 = no check) */
 
 static void load_text(void)
@@ -715,15 +717,37 @@ static int rule_for(LONG h, LONG x, LONG y)  /* index into g_wr or -1 */
             && (g_wr[i].y == 0 || (y >= g_wr[i].y - 2 && y <= g_wr[i].y + 2))) return i;
     return -1;
 }
+/* @@w(n)@@ / @@W(n)@@ = colour n, @@rw@@ / @@RW@@ = back to the caller's colour (game markup kept in the translations).
+   markup_colors = "n:AARRGGBB,..." in the ini; a code without an entry keeps the caller's colour. */
+static DWORD g_mc[256];
+static void load_markup_colors(const char *v)
+{
+    while (*v) {
+        unsigned n = 0, c = 0; int used = 0;
+        if (sscanf(v, " %u:%x%n", &n, &c, &used) == 2 && n < 256) { g_mc[n] = c; v += used; }
+        while (*v && *v != ',') v++;
+        if (*v == ',') v++;
+    }
+}
 static struct lay *layout_text(int fi, void *self, int id, LONG h, int wrap)
 {
-    struct lay *L; const WCHAR *t = g_txt[id]; int i, j, len, n = 0, line = 0, ls = 0, lb = -1, k; LONG x = 0, w;
+    struct lay *L; const WCHAR *t = g_txt[id]; int i, j, len, n = 0, line = 0, ls = 0, lb = -1, k; LONG x = 0, w; unsigned char ci = 0;
     for (i = 0; i < 64; i++) if (g_lay[i].id == id && g_lay[i].fi == fi && g_lay[i].wrap == wrap && g_lay[i].font == self && g_lay[i].h == h) return &g_lay[i];
     L = &g_lay[g_lay_next]; g_lay_next = (g_lay_next + 1) & 63;
     L->id = id; L->fi = fi; L->wrap = wrap; L->font = self; L->h = h; L->n = 0;
     len = (int)wcslen(t);
     for (i = 0; i < len && n < MAXCL; i = j) {
         WCHAR c = t[i]; j = i + 1;
+        if (c == '@' && t[i + 1] == '@') {                                    /* markup: change colour, draw nothing */
+            const WCHAR *e = wcsstr(t + i + 2, L"@@");
+            if (e) {
+                const WCHAR *tk = t + i + 2;
+                if ((tk[0] == 'w' || tk[0] == 'W') && tk[1] == '(') { int v = _wtoi(tk + 2); ci = (unsigned char)(v > 0 && v < 256 ? v : 0); }
+                else if ((tk[0] == 'r' || tk[0] == 'R') && (tk[1] == 'w' || tk[1] == 'W')) ci = 0;
+                j = (int)(e - t) + 2; continue;
+            }
+            ci = 0; j = i + 2; continue;                                       /* lone '@@' (unclosed code at the end): skip */
+        }
         if (c == 42) { line++; x = 0; ls = n; lb = -1; continue; }              /* '*' forced break */
         if (c == 0x200B) { lb = n; continue; }                                  /* allowed break before the next cluster */
         if (is_thai(c) && (is_mark(c) || c == 0x0E33)) continue;               /* orphan mark: never draw alone */
@@ -737,7 +761,7 @@ static struct lay *layout_text(int fi, void *self, int id, LONG h, int wrap)
             } else { x = 0; ls = n; }                                          /* no opportunity: hard break here */
             line++; lb = -1;
         }
-        L->c[n].x = (short)x; L->c[n].y = (short)line; L->c[n].st = (short)i; L->c[n].len = (short)(j - i); n++;
+        L->c[n].x = (short)x; L->c[n].y = (short)line; L->c[n].st = (short)i; L->c[n].len = (short)(j - i); L->c[n].ci = ci; n++;
         x += w;
         if (c == 32) lb = n;                                                    /* break allowed after a space */
     }
@@ -773,7 +797,8 @@ static LONG expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG
     for (k = 0; k < L->n; k++) {
         SetRect(&rc, x0 + L->c[k].x, y0 + L->c[k].y * pitch, x0 + L->c[k].x + 3 * th, y0 + L->c[k].y * pitch + 2 * th);
         if (fi >= 0 && g_txt[id][L->c[k].st] < 0x80) OffsetRect(&rc, 0, g_tf[fi].adiff);
-        kdraw(g_txt[id][L->c[k].st] < 0x80 ? -1 : fi, self, spr, &g_txt[id][L->c[k].st], L->c[k].len, &rc, DT_NOCLIP, col);
+        kdraw(g_txt[id][L->c[k].st] < 0x80 ? -1 : fi, self, spr, &g_txt[id][L->c[k].st], L->c[k].len, &rc, DT_NOCLIP,
+              (L->c[k].ci && g_mc[L->c[k].ci]) ? ((g_mc[L->c[k].ci] & 0xFFFFFF) | (col & 0xFF000000)) : col);
     }
     return x0 + L->wend;
 }

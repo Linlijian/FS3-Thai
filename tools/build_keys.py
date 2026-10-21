@@ -6,7 +6,9 @@ Members found in FS3UpdataChs.dat are patched there; the others (e.g. Bin/FS2_It
 FS3Bin.dat.bak + the channel table BIG2GB.idx of <out_dir>/FS3Bin.dat, so re-running never stacks old edits.
 Slots < 6 bytes get a one-char SHORT key (U+E200+id, ids 1..127 reserved for their texts).
 Rows with empty thai reuse the translation of another row with the same source, else stay original.
-Thai without any '|' is word-broken automatically (tools/thaibreak.py, Windows Uniscribe dictionary)."""
+Thai without any '|' is word-broken automatically (tools/thaibreak.py, Windows Uniscribe dictionary).
+Dialogue with more than PAGE lines ('*') keeps the engine's paging: the Thai is cut into pages of PAGE lines and the slot becomes
+KEY1* * * *KEY2* ...  (one key per page + blank lines, like the originals pad their pages), so each page is its own text."""
 import os, sys, hashlib, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fszip, fsdialog, fstables, fsexe, thaichan, thaibreak
@@ -29,6 +31,7 @@ def slot_len(member, blk, off):
             {(g.block, st): len(r) for g in fsdialog.groups(fsdialog.parse(d)[0], d)[0] for st, r in g.strs}
     return slots[member][(blk, off)]
 exe_rows = [r for r in rows if r[0] == 'FS3.exe' and r[-1].strip()]; rows = [r for r in rows if r[0] != 'FS3.exe']   # drawn-text replacement
+PAGE = 4                                                                            # lines per dialogue box page (Chinese originals)
 items, seen = [], set()                                                             # (member, (block, offset), text, slot bytes)
 for r in rows:
     member, blk, off, thai = r[0], int(r[1]), int(r[2]), r[-1]
@@ -37,14 +40,22 @@ for r in rows:
     if len(r) == 5 and not thai.strip(): thai = by_src.get(r[3], '')
     if not thai.strip(): continue
     if '|' not in thai: thai = thaibreak.breaks(thai)
-    items.append((member, (blk, off), thai.replace('|', '​'), slot_len(member, blk, off)))
+    thai = thai.replace('|', '​'); n = slot_len(member, blk, off); lines = thai.split('*')
+    if not fstables.kind(member) and n >= 6 and len(lines) > PAGE:                   # multi-page dialogue: one text per page
+        thai = tuple('*'.join(lines[p:p + PAGE]).rstrip('* ') or ' ' for p in range(0, len(lines), PAGE))
+    items.append((member, (blk, off), thai, n))
 ids = {}                                       # texts used by a < 6-byte slot get the low ids: a SHORT key U+E200+id is one char
-for it in sorted(items, key=lambda it: it[3] >= 6): ids.setdefault(it[2], len(ids) + 1)
+for it in sorted(items, key=lambda it: it[3] >= 6):
+    for t in (it[2] if isinstance(it[2], tuple) else (it[2],)): ids.setdefault(t, len(ids) + 1)
+K = lambda i: chr(0xE000) + chr(0xE100 + i // 128) + chr(0xE100 + i % 128)
 assert len(ids) < 128 * 128
 by_member, nshort = collections.defaultdict(dict), 0
 for member, at, text, n in items:
+    if isinstance(text, tuple):                                                     # pages: KEY + blank lines, page after page
+        key = '*'.join(K(ids[t]) + '* ' * (PAGE - 1) for t in text[:-1]) + ('*' if len(text) > 1 else '') + K(ids[text[-1]])
+        by_member[member][at] = thaichan.encode(key, t2b); continue
     i = ids[text]
-    if n >= 6: key = chr(0xE000) + chr(0xE100 + i // 128) + chr(0xE100 + i % 128)
+    if n >= 6: key = K(i)
     else: assert i < 128, f'more than 127 distinct texts in short slots ({member} {at})'; key = chr(0xE200 + i); nshort += 1
     by_member[member][at] = thaichan.encode(key, t2b)
 repl = collections.defaultdict(dict)
@@ -83,6 +94,7 @@ with open(f'{out}/FS3_TH_text.txt', 'w', encoding='utf-8', newline='\n') as f:
     for text, i in sorted(ids.items(), key=lambda kv: kv[1]): f.write(f'{i}\t{text}\n')
 with open(f'{out}/FS3_TH_ids.tsv', 'w', encoding='utf-8', newline='\n') as f:     # addresses only: for overflow_report.py
     f.write('# id\tmember\tblock\toffset_in_block\n')
-    for member, at, text, _ in items: f.write(f'{ids[text]}\t{member}\t{at[0]}\t{at[1]}\n')
+    for member, at, text, _ in items:
+        for t in (text if isinstance(text, tuple) else (text,)): f.write(f'{ids[t]}\t{member}\t{at[0]}\t{at[1]}\n')
 print(f'{sum(map(len, by_member.values()))} slots ({nshort} short keys), {len(ids)} texts')
 for ln in report: print(ln)
