@@ -65,8 +65,9 @@ def groups(name, data):
         for t in _tokens(blk):
             if cur and t[0] == cur[-1][0] + len(cur[-1][1]) + 1: cur.append(t)
             else: runs.append(cur); cur = [t]
-        runs.append(cur)
-        for run in runs:
+        runs.append(cur); seen = 0
+        while seen < len(runs):
+            run = runs[seen]; seen += 1
             if not any(b >= 0x80 for _, r in run for b in r): continue
             hit = None
             for span in range(len(run), 0, -1):
@@ -75,8 +76,11 @@ def groups(name, data):
                     if any(b >= 0x80 for _, r in sub for b in r) and _ok(blk, sub, stride, fld): hit = sub; break
                 if hit: break
             if not hit: hit = _by_desc(blk, run, stride, fld)
-            if hit: res.append(Group(bi, hit[0][0], hit))
+            if hit:
+                res.append(Group(bi, hit[0][0], hit))
+                k = run.index(hit[0]); runs += [run[:k], run[k + len(hit):]]   # a run can hold several groups: search what is left
             else: bad += 1
+    res.sort(key=lambda g: (g.block, g.start))
     return res, bad
 def rebuild(data):
     """parse -> serialise again from (name, count, toc, blocks). Identical to input by construction of the TOC rule; used by tests."""
