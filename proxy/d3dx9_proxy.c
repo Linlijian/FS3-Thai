@@ -144,7 +144,7 @@ static void load_config(void)
     g_wrap_w = GetPrivateProfileIntA("hook", "wrap_width", 580, g_ini);
     g_pitch_pct = GetPrivateProfileIntA("hook", "line_pitch_pct", 90, g_ini);
     g_box_lines = GetPrivateProfileIntA("hook", "box_lines", 0, g_ini);
-    GetPrivateProfileStringA("hook", "markup_colors", "1:ff2374d8,9:fff5002d", v, sizeof v, g_ini); load_markup_colors(v);
+    GetPrivateProfileStringA("hook", "markup_colors", "1:fff5002d", v, sizeof v, g_ini); load_markup_colors(v);
     GetPrivateProfileStringA("hook", "wrap_rules", "20@>330:204=300/e,24@>370:247=300/e,12@600=300/e,12@680=300/e,16@10:463=300/e,16@>30:463=300/e,16@288:330=300/e,16@328:363=300/e,20@294:70=300/e,20@294:98=300/e,20@294:126=300/e,20@294:154=300/e,20@294:182=300/e,24@55=300/e,20@32:209=300/e,20@>240:104=300/e,24@>440:101=300/e,20@>220:111=300/e,20@>220:139=300/e,20@328=300/e,20@388=300/e,12@689=96,12@673=112,12@662=128,24@>640=130/e,20@>640=135/e,20@260=140/e,12@17=72/e,12@>730:85=62/e,12@0=168", v, sizeof v, g_ini); load_wrap_rules(v);
 }
 
