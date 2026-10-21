@@ -71,3 +71,14 @@
 
 ## ลำดับที่แนะนำ
 0 (แปล 60 บรรทัด) → A (KINDLE) → C (ชื่อสถานที่) → B (ป้ายเหนือหัว + เซฟ) → D (Mission, Narrate, Status, Compound) → E (เครื่องมือตรวจ) → ทดสอบรอบใหญ่ b4
+
+## ผลการดำเนินการ (2026-10-21, ต่อจากแผน)
+* **0 บทสนทนาที่หลุด 60 บรรทัด:** แปลแล้ว (`work/tr_new_dialogue.merged.tsv`) รวมเข้า master
+* **A KINDLE.BIN:** ถอดแล้ว 3 ตาราง (849×116 ชื่อ@+0, 1,429×96 ท่า@+20, 740×204 @+0, ชื่อ[20]) — แปล 258 ข้อความไม่ซ้ำ
+* **B ชื่อในเซฟ/ป้ายเหนือหัว:** proxy แทนชื่อตอนวาด (ตาราง exact-match O(1), NREP 4096) — build_keys เติมชื่อ/สถานที่จาก Objects, KINDLE, FS3Maps ลง `FS3_TH_exe.txt` (1,276 รายการ)
+* **C FS3Maps.BIN:** 306×1268 ชื่อ@+16 — แปล 279
+* **D** Mission (ตารางออฟเซ็ต 999 @28024, blob @32020, ต้นฉบับ `Mission.bnk.bin` → `fszip.orig`), FS2_Narrate (ตัวชี้ absolute 66 @1368), Compound (520×116 @+4), FS2_Status (27×24 name[8], padding 0xcc คงไว้), BlessTable (18×80 @+16) — แปลครบ ยกเว้นเครดิตทีมงาน 28 บรรทัด (ชื่อคนจริง คงต้นฉบับ)
+* ตัวติดตั้ง: เพิ่ม `CFG/Mission.bin` ใน REPLACED / make_dist
+* **E** `tools/find_untranslated.py files|log`
+* master: 21,580 แถว, ว่าง 45 (เครดิต 28, ข้อความเสียใน exe 15, ช่องว่าง 2); `work/tr_complete/` ส่งออกใหม่ 316 ไฟล์ ครบทุกไฟล์
+

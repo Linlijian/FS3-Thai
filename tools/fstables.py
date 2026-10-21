@@ -35,9 +35,61 @@ FIXED = {'Objects.bin': (0, 4, 104, 20, 0), 'FS2_Items.bin': (40, 44, 124, 16, 0
 HELP = ('FS2_ItemHelp.bin', 'DefaultString.bin')   # same layout; DefaultString = loose CFG/ file (battle popups, mission goals)
 MULTI = {'FS2_Fighter.Bin': ((0, 2, 5, 6, 7), 0x48), 'FS2_FighterHelp.bin': ((0, 1, 2), 0x34)}   # header indices of list counts, first list
 MSG = ('Message.bin',)
+# ---- added 2026-10-21 (untranslated-plan.md): more record tables and offset-table blobs
+# TABLES: base -> [(first record, count, record size, name offset, name size)]; address = (record, table index)
+TABLES = {'KINDLE.BIN': [(52, 849, 116, 0, 20), (105328, 1429, 96, 20, 20), (242512, 740, 204, 0, 20)],   # battle chars / moves / ?
+          'Compound.bin': [(260, 520, 116, 4, 16)],                                                    # crafting
+          'FS3Maps.BIN': [(44, 306, 1268, 16, 16)],                                                    # map / place names
+          'BlessTable.bin': [(44, 18, 80, 16, 16)],                                                    # blessings
+          'FS2_Status.bin': [(44, 27, 24, 0, 8)]}                                                      # status effects (0xcc padded)
+# OFFT: base -> (pointer table offset, count, blob offset, absolute pointers?); every string rewritten, pointers rebuilt; address = (index, 0)
+OFFT = {'FS2_Narrate.bin': (1368, 66, 3480, True),          # 66 narration / credit lines, absolute pointers
+        'Mission.bin': (28024, 999, 32020, False)}           # 999 quest-log lines (CFG/, original = Mission.bnk.bin), blob-relative
+def _tab(base, data):
+    out = []
+    for ti, (first, n, rec, no, ns) in enumerate(TABLES[base]):
+        assert first + n * rec <= len(data), base
+        for i in range(n):
+            o = first + i * rec + no; out.append((i, ti, o, ns, data[o:data.index(b'\0', o)]))
+    return out
+def _offt(data, base):
+    pt, n, b0, ab = OFFT[base]; offs = struct.unpack_from(f'<{n}I', data, pt); strs = []
+    for k, o in enumerate(offs):
+        a = o if ab else b0 + o; strs.append(data[a:data.index(b'\0', a)])
+        assert a == b0 + sum(len(x) + 1 for x in strs[:-1]), (base, k)
+    assert b0 + sum(len(x) + 1 for x in strs) == len(data), base
+    return pt, b0, ab, strs
+def _x_strs(base, data):
+    if base in TABLES: return {(i, t): r for i, t, _, _, r in _tab(base, data) if r}
+    out = {}
+    for i, r in enumerate(_offt(data, base)[3]):
+        if b'%' in r: out.update(_tmpl_strs(i, r))
+        elif r: out[(i, 0)] = r
+    return out
+def _x_patch(base, data, edits):
+    if base in TABLES:
+        b = bytearray(data); at = {(i, t): (o, ns, r) for i, t, o, ns, r in _tab(base, data)}
+        for k, new in edits.items():                                  # keep the padding after the old string (FS2_Status: 0xcc)
+            o, ns, r = at[k]; assert len(new) < ns, (base, k, len(new)); w = max(len(new), len(r)) + 1; b[o:o + w] = new.ljust(w, b'\0')
+        return bytes(b)
+    pt, b0, ab, s = _offt(data, base); by = {}
+    for (i, k), new in edits.items(): by.setdefault(i, {})[k] = new
+    for i, e in by.items():
+        if 0 in e: s[i] = e[0]; continue
+        parts, k, out = _pieces(s[i]), 0, b''
+        for j, part in enumerate(parts):
+            if j % 2 == 0 and part: k += 1; out += e.get(k, part.encode('cp950', 'surrogateescape'))
+            else: out += part.encode('cp950', 'surrogateescape')
+        s[i] = out
+    offs, o = [], 0
+    for x in s: offs.append(b0 + o if ab else o); o += len(x) + 1
+    return data[:pt] + struct.pack(f'<{len(s)}I', *offs) + data[pt + 4 * len(s):b0] + b''.join(x + b'\0' for x in s)
+def _x_offset(base, data, blk, off):
+    if base in TABLES: return {(i, t): o for i, t, o, _, _ in _tab(base, data)}[(blk, off)]
+    pt, b0, ab, s = _offt(data, base); return b0 + sum(len(x) + 1 for x in s[:blk])
 def kind(member):
     base = member.rsplit('/', 1)[-1]
-    return base if base in FIXED or base in HELP or base in MULTI or base in MSG else None
+    return base if base in FIXED or base in HELP or base in MULTI or base in MSG or base in TABLES or base in OFFT else None
 def _msg(data):
     """-> (start of the string area, [raw strings]) ; the length chain must end exactly at EOF"""
     assert data[:8] == b'MSGV2.0\x00', 'not MSGV2.0'
@@ -77,6 +129,7 @@ def _help(data):
 def strs(member, data):
     """-> {(record, 0): raw bytes} for every non-empty string"""
     base = kind(member)
+    if base in TABLES or base in OFFT: return _x_strs(base, data)
     if base in MULTI: return {(li, k): r for li, k, _, r in _multi(base, data) if r}
     if base in MSG or base in HELP:
         out = {}
@@ -88,12 +141,15 @@ def strs(member, data):
     return {(i, 0): r for i in range(n) if (r := data[first + i * rec: first + i * rec + name].split(b'\0')[0])}
 def slot_lens(member, data):
     base = kind(member)
+    if base in TABLES: return {(i, t): ns - 1 for i, t, _, ns, r in _tab(base, data) if r}
+    if base in OFFT: return {k: 10 ** 6 for k in _x_strs(base, data)}
     if base in MULTI: return {(li, k): len(r) for li, k, _, r in _multi(base, data) if r}
     room = 10 ** 6 if base in HELP or base in MSG else FIXED[base][3] - 1      # whole name field minus the NUL
     return {k: room for k in strs(member, data)}
 def patch(member, data, edits):
     """edits: {(record, 0): new_bytes}; fixed tables: NUL-padded in place; help table: rebuilt with new offsets"""
     base = kind(member)
+    if base in TABLES or base in OFFT: return _x_patch(base, data, edits)
     if base in MULTI:
         b = bytearray(data); at = {(li, k): (pos, len(r)) for li, k, pos, r in _multi(base, data)}
         for key, new in edits.items():
@@ -120,6 +176,7 @@ def patch(member, data, edits):
 def offset_of(member, data, blk, off):
     """byte offset of a written string (for verification)"""
     base = kind(member)
+    if base in TABLES or base in OFFT: return _x_offset(base, data, blk, off)
     if base in MULTI: return {(li, k): pos for li, k, pos, _ in _multi(base, data)}[(blk, off)]
     if base in MSG:
         start, s = _msg(data); return start + sum(4 + len(x) + 1 for x in s[:blk]) + 4
@@ -131,4 +188,10 @@ if __name__ == '__main__':                                       # round trip on
                    ('FS3Bin.dat.bak', 'Bin/FS2_Fighter.Bin'), ('FS3Bin.dat.bak', 'Bin/FS2_FighterHelp.bin')):
         d = fszip.open_fszip(f'{sys.argv[1]}/Pack/{arc}').read(m); s = strs(m, d)
         assert patch(m, d, {}) == d and patch(m, d, dict(list(s.items())[:5])) == d, m
+        print(m, len(s), 'strings, round trip OK')
+    for arc, m in (('FS3UpdataChs.dat', 'BIN/KINDLE.BIN'), ('FS3UpdataChs.dat', 'BIN/Compound.bin'), ('FS3UpdataChs.dat', 'BIN/FS3Maps.BIN'),
+                   ('FS3Bin.dat.bak', 'Bin/BlessTable.bin'), ('FS3Bin.dat.bak', 'Bin/FS2_Status.bin'), ('FS3Bin.dat.bak', 'Bin/FS2_Narrate.bin'), (None, 'CFG/Mission.bnk.bin')):
+        d = open(f'{sys.argv[1]}/{m}', 'rb').read() if arc is None else fszip.open_fszip(f'{sys.argv[1]}/Pack/{arc}').read(m)
+        m = m.replace('.bnk', ''); s = strs(m, d)
+        assert patch(m, d, {}) == d and patch(m, d, s) == d, m
         print(m, len(s), 'strings, round trip OK')

@@ -7,7 +7,7 @@ import os, sys, re, shutil, hashlib, subprocess, tempfile
 try: sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception: pass
 APP = os.path.abspath(sys.argv[0]); HERE = os.path.dirname(APP); MOD = os.path.join(HERE, 'mod')
-REPLACED = ['Pack/FS3Bin.dat', 'Pack/FS3UpdataChs.dat', 'Pack/FS3UI.pak', 'CFG/DefaultString.bin']   # originals backed up, rebuilt
+REPLACED = ['Pack/FS3Bin.dat', 'Pack/FS3UpdataChs.dat', 'Pack/FS3UI.pak', 'CFG/DefaultString.bin', 'CFG/Mission.bin']   # originals backed up, rebuilt
 CHECKED = REPLACED + ['FS3.exe']                                                                      # must match source_hashes.txt
 PLACED = ['FS3_TH_map.txt', 'FS3_TH_text.txt', 'FS3_TH_exe.txt']                                      # generated, dropped next to FS3.exe
 OWN = PLACED + ['FS3_TH_hook.ini', 'FS3_TH_hook.log', 'FS3_TH_installed.txt', 'FS3_TH_hook.ini.old']
@@ -93,7 +93,7 @@ def install(game):
         import fszip, ujpak
         for a in ('FS3Bin.dat', 'FS3UpdataChs.dat'): assert fszip.open_fszip(os.path.join(out, a)).testzip() is None, a
         ujpak.read_tree(open(os.path.join(out, 'FS3UI.pak'), 'rb').read())
-        for f in PLACED + ['CFG/DefaultString.bin']: assert os.path.getsize(os.path.join(out, f)) > 0, f
+        for f in PLACED + ['CFG/DefaultString.bin', 'CFG/Mission.bin']: assert os.path.getsize(os.path.join(out, f)) > 0, f
         print('[5/5] Installing')
         dll, orig, ours = (os.path.join(game, 'd3dx9_25.dll'), os.path.join(game, 'd3dx9_25_orig.dll'), os.path.join(MOD, 'd3dx9_25.dll'))
         if not os.path.isfile(orig):
@@ -102,7 +102,8 @@ def install(game):
         ini = os.path.join(game, 'FS3_TH_hook.ini')
         if os.path.isfile(ini) and sha(ini) != sha(os.path.join(MOD, 'FS3_TH_hook.ini')): shutil.copyfile(ini, ini + '.old')
         todo = [put(os.path.join(out, 'FS3Bin.dat'), os.path.join(game, 'Pack', 'FS3Bin.dat')), put(os.path.join(out, 'FS3UpdataChs.dat'), os.path.join(game, 'Pack', 'FS3UpdataChs.dat')),
-                put(os.path.join(out, 'FS3UI.pak'), os.path.join(game, 'Pack', 'FS3UI.pak')), put(os.path.join(out, 'CFG', 'DefaultString.bin'), os.path.join(game, 'CFG', 'DefaultString.bin'))]
+                put(os.path.join(out, 'FS3UI.pak'), os.path.join(game, 'Pack', 'FS3UI.pak')), put(os.path.join(out, 'CFG', 'DefaultString.bin'), os.path.join(game, 'CFG', 'DefaultString.bin')),
+                put(os.path.join(out, 'CFG', 'Mission.bin'), os.path.join(game, 'CFG', 'Mission.bin'))]
         todo += [put(os.path.join(out, f), os.path.join(game, f)) for f in PLACED] + [put(os.path.join(MOD, 'FS3_TH_hook.ini'), ini)]
         swap = not os.path.isfile(orig); dll_new = put(ours, dll) and dll
         try:

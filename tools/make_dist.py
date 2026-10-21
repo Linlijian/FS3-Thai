@@ -20,7 +20,7 @@ subprocess.run([sys.executable, '-I', f'{ROOT}/tools/pack_translations.py', stri
 sha = lambda p: hashlib.sha256(open(p, 'rb').read()).hexdigest()
 with open(f'{pkg}/mod/source_hashes.txt', 'w', encoding='ascii', newline='\n') as f:
     f.write('# sha256 of the ORIGINAL files this package builds from (checked by install.py before anything is changed)\n')
-    for rel in ['Pack/FS3Bin.dat', 'Pack/FS3UpdataChs.dat', 'Pack/FS3UI.pak', 'CFG/DefaultString.bin', 'FS3.exe']:
+    for rel in ['Pack/FS3Bin.dat', 'Pack/FS3UpdataChs.dat', 'Pack/FS3UI.pak', 'CFG/DefaultString.bin', 'CFG/Mission.bin', 'FS3.exe']:
         f.write(f'{sha(fszip.orig(game, rel))}  {rel}\n')
 README = """FS3 Thai - Thai text for Fantasia Sango 3 (Steam)
 

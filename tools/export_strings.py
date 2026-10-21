@@ -26,7 +26,7 @@ with open(out, 'w', encoding='utf-8', newline='\n') as f:
                 if not any(b >= 0x80 for b in raw): continue          # ASCII-only: labels / code, not text
                 src = raw.decode(fsdialog.ENC).replace('\t', ' '); n += 1; uniq.add(src); small += len(raw) < 6 and fstables.kind(i.filename) in (None, *fstables.MULTI)
                 f.write(f'{i.filename}\t{blk}\t{st}\t{src}\t\n')
-    for m in ('CFG/DefaultString.bin',):                                   # loose file outside the archives; .bak = original
+    for m in ('CFG/DefaultString.bin', 'CFG/Mission.bin'):                                   # loose file outside the archives; .bak = original
         src = fszip.orig(game, m)
         for (blk, st), raw in sorted(fstables.strs(m, open(src, 'rb').read()).items()):
             if not any(b >= 0x80 for b in raw): continue

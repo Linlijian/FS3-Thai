@@ -810,8 +810,10 @@ static LONG expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG
    and is drawn like an expanded key. Only whole-line DrawTextW calls can match (cell-by-cell text never does). */
 #define EXE_FILE "FS3_TH_exe.txt"
 #define DYN0     16256
-#define NREP     256
-static WCHAR *g_rp[NREP], *g_rt[NREP];
+#define NREP     4096                       /* exe strings + character / place names (old saves and NPC labels keep Chinese names) */
+#define NLH      16384                      /* exact-match hash table for patterns without %: lookup is O(1) */
+static WCHAR *g_rp[NREP], *g_rt[NREP]; static char g_lit[NREP];
+static unsigned long long g_lh[NLH]; static short g_li[NLH];
 static int g_nrep, g_dynn;
 static unsigned long long g_mh[512]; static short g_mid[512];   /* match cache: string hash -> id (0 = no match) */
 
@@ -831,7 +833,15 @@ static void load_exe_text(void)
         while (e > line && (e[-1] == 10 || e[-1] == 13)) *--e = 0;
         if (line[0] == '#' || !tab) continue;
         *tab = 0; g_rp[g_nrep] = utf8w(line); g_rt[g_nrep] = utf8w(tab + 1);
-        if (g_rp[g_nrep] && g_rt[g_nrep]) g_nrep++;
+        if (g_rp[g_nrep] && g_rt[g_nrep]) {
+            if (!wcschr(g_rp[g_nrep], '%')) {
+                unsigned long long h = fnv(1469598103934665603ULL, g_rp[g_nrep], (int)wcslen(g_rp[g_nrep]) * 2) | 1; int k = (int)(h % NLH);
+                while (g_lh[k] && g_lh[k] != h) k = (k + 1) % NLH;
+                if (!g_lh[k]) { g_lh[k] = h; g_li[k] = (short)g_nrep; }
+                g_lit[g_nrep] = 1;
+            }
+            g_nrep++;
+        }
     }
     fclose(f);
     hooklog("drawn-text replacement: %d patterns loaded from %s", g_nrep, EXE_FILE);
@@ -875,8 +885,14 @@ static int exe_match(const WCHAR *s, int n)  /* -> text id of the Thai replaceme
     h = fnv(1469598103934665603ULL, s, n * 2) | 1; slot = (int)(h & 511);
     if (g_mh[slot] == h) return g_mid[slot];
     memcpy(buf, s, n * sizeof(WCHAR)); buf[n] = 0; id = 0;
+    {   int k = (int)(h % NLH), lit = -1;
+        while (g_lh[k]) { if (g_lh[k] == h && !wcscmp(g_rp[g_li[k]], buf)) { lit = g_li[k]; break; } k = (k + 1) % NLH; }
+        i = lit >= 0 ? lit : 0;
+        if (lit >= 0) { nc = 0; goto found; }
+    }
     for (i = 0; i < g_nrep && !id; i++) {
-        if ((nc = pmatch(g_rp[i], buf, cs, cl, 0)) < 0) continue;
+        if (g_lit[i] || (nc = pmatch(g_rp[i], buf, cs, cl, 0)) < 0) continue;
+      found:
         ci = 0;
         {   const WCHAR *t = g_rt[i]; int w = 0;
             while (*t && w < 1000) {
