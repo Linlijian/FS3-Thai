@@ -16,6 +16,7 @@ with zipfile.ZipFile(f'{pkg}/app.zip', 'w', zipfile.ZIP_DEFLATED) as z:         
 shutil.copy(exe, f'{pkg}/install.exe'); shutil.copy(exe, f'{pkg}/uninstall.exe')
 shutil.copy(dll, f'{pkg}/mod/d3dx9_25.dll'); shutil.copy(f'{ROOT}/proxy/FS3_TH_hook.ini', f'{pkg}/mod/FS3_TH_hook.ini')
 shutil.copy(f'{ROOT}/poc/FS3_TH_map.txt', f'{pkg}/mod/channel_base.txt'); shutil.copy(f'{ROOT}/poc/ui_labels.tsv', f'{pkg}/mod/ui_labels.tsv')
+shutil.copy(f'{ROOT}/poc/key_ids.tsv', f'{pkg}/mod/key_ids.tsv')                       # text ids stay the same as in our builds: saves store keys
 subprocess.run([sys.executable, '-I', f'{ROOT}/tools/pack_translations.py', strings, f'{pkg}/mod/translations.tsv'], check=True)
 sha = lambda p: hashlib.sha256(open(p, 'rb').read()).hexdigest()
 with open(f'{pkg}/mod/source_hashes.txt', 'w', encoding='ascii', newline='\n') as f:

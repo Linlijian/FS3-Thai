@@ -1,5 +1,5 @@
 """FS3 Thai installer (runs on the player's PC, standard library only). Shipped inside app.zip as __main__.py (run: python -I app.zip install|uninstall [--game DIR] [--yes]).
-Package layout: install.exe uninstall.exe app.zip(__main__.py + tools/*.py) mod/{d3dx9_25.dll, FS3_TH_hook.ini, channel_base.txt, translations.tsv, ui_labels.tsv, source_hashes.txt} python/
+Package layout: install.exe uninstall.exe app.zip(__main__.py + tools/*.py) mod/{d3dx9_25.dll, FS3_TH_hook.ini, channel_base.txt, translations.tsv, key_ids.tsv, ui_labels.tsv, source_hashes.txt} python/
 install: checks the player's original files by sha256 -> backs them up (FS3_TH_backup, first time only) -> BUILDS the Thai files from
 those originals (no game data is shipped) -> stages *.th_new -> renames into place; any failure restores the backup.
 Console text is English on purpose (cmd.exe cannot show Thai)."""
@@ -87,7 +87,7 @@ def install(game):
     try:
         print('[3/5] Building the Thai files from your game (about 1 minute)')
         run('build_channel', game, os.path.join(MOD, 'channel_base.txt'), out)
-        run('build_keys', game, os.path.join(out, 'FS3_TH_map.txt'), os.path.join(MOD, 'translations.tsv'), out)
+        run('build_keys', game, os.path.join(out, 'FS3_TH_map.txt'), os.path.join(MOD, 'translations.tsv'), out, os.path.join(MOD, 'key_ids.tsv'))
         run('build_ui', game, os.path.join(MOD, 'ui_labels.tsv'), out)
         print('[4/5] Checking the built files')
         import fszip, ujpak

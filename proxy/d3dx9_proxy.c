@@ -50,7 +50,7 @@ static int     g_log_textout = 1;
 static int     g_log_mb2wc = 1;
 static int     g_hooked_textout;
 static int     g_log_draw = 1;          /* log ID3DXFont::DrawTextA/W (step E, black-box) */
-static int     g_thai_layout, g_thai_scale, g_thai_dy, g_thai_charset, g_engine_glyphs, g_wrap_w, g_pitch_pct, g_box_lines;   /* defined with defaults in the Thai layout block */
+static int     g_thai_layout, g_thai_scale, g_thai_dy, g_thai_charset, g_engine_glyphs, g_wrap_w, g_pitch_pct, g_box_lines, g_fit_min, g_typewriter;   /* defined with defaults in the Thai layout block */
 static char    g_thai_face[64];
 static HMODULE g_self;
 static char    g_dir[MAX_PATH];         /* folder this DLL sits in */
@@ -144,8 +144,10 @@ static void load_config(void)
     g_wrap_w = GetPrivateProfileIntA("hook", "wrap_width", 580, g_ini);
     g_pitch_pct = GetPrivateProfileIntA("hook", "line_pitch_pct", 90, g_ini);
     g_box_lines = GetPrivateProfileIntA("hook", "box_lines", 0, g_ini);
+    g_fit_min = GetPrivateProfileIntA("hook", "fit_min_pct", 70, g_ini);
+    g_typewriter = GetPrivateProfileIntA("hook", "typewriter", 1, g_ini);
     GetPrivateProfileStringA("hook", "markup_colors", "1:fff5002d", v, sizeof v, g_ini); load_markup_colors(v);
-    GetPrivateProfileStringA("hook", "wrap_rules", "20@>330:204=300/e,24@>370:247=300/e,12@600=300/e,12@680=300/e,16@10:463=300/e,16@>30:463=300/e,16@288:330=300/e,16@328:363=300/e,20@294:70=300/e,20@294:98=300/e,20@294:126=300/e,20@294:154=300/e,20@294:182=300/e,24@55=300/e,20@32:209=300/e,20@>240:104=300/e,24@>440:101=300/e,20@>220:111=300/e,20@>220:139=300/e,20@328=300/e,20@388=300/e,12@689=96,12@673=112,12@662=128,24@>640=130/e,20@>640=135/e,20@260=140/e,12@17=72/e,12@>730:85=62/e,12@0=168", v, sizeof v, g_ini); load_wrap_rules(v);
+    GetPrivateProfileStringA("hook", "wrap_rules", "20@>330:204=300/e,24@>370:247=300/e,12@600=300/e,12@680=300/e,16@10:463=300/e,16@>30:463=300/e,16@288:330=300/e,16@328:363=300/e,20@294:70=300/e,20@294:98=300/e,20@294:126=300/e,20@294:154=300/e,20@294:182=300/e,24@55=300/e,20@32:209=300/e,20@>240:104=300/e,24@>440:101=300/e,20@>220:111=300/e,20@>220:139=300/e,20@328=300/e,20@388=300/e,12@689=96,12@673=112,12@662=128,24@>640=130/e/c,20@>640=135/e/c,20@260=140/e/c,12@17=72/e/c,12@>730:85=62/e,20@312=280/c,20@449=150/c,24@>300:471=770/r/h112,24@>100:467=770/r/h112,24@0:471=536/r/h112,12@0=168", v, sizeof v, g_ini); load_wrap_rules(v);
 }
 
 /* Resolve paths next to this DLL rather than the process CWD. */
@@ -512,8 +514,9 @@ typedef HRESULT (WINAPI *PFN_GetDevice)(void *, void **);
 typedef HRESULT (WINAPI *PFN_Void)(void *);
 typedef ULONG   (WINAPI *PFN_Release)(void *);
 typedef HRESULT (WINAPI *PFN_GetTM)(void *, TEXTMETRICA *);
-static struct { void *eng, *thai; LONG dy, th, adiff; } g_tf[16];   /* adiff = Thai ascent - engine ascent (baseline match) */
-static LONG g_tw[16][0x60];              /* advance cache U+0E00..0E5F per Thai font, -1 = unknown */
+#define NTF 48                           /* Thai fonts: one per (engine font, size %) -- fitting text tries smaller sizes */
+static struct { void *eng, *thai; int pct; LONG dy, th, adiff; } g_tf[NTF];   /* adiff = Thai ascent - engine ascent (baseline match) */
+static LONG g_tw[NTF][0x60];             /* advance cache U+0E00..0E5F per Thai font, -1 = unknown */
 static struct { void *font; LONG y, last_x, our_x, adv, base_x, ty, h; WCHAR cl[8]; int cln, used, pend, fi, kst, kval; LONG kx, ky; void *self, *spr; DWORD col; } g_ln[32];
 static int g_ln_next, g_tw_init;
 
@@ -523,21 +526,21 @@ static INT thai_draw(void *f, void *spr, const WCHAR *c, int n, RECT *rc, DWORD 
 {
     return ((PFN_DrawTextW)(*(void ***)f)[15])(f, spr, c, n, rc, fmt, col);
 }
-static int thai_font(void *eng)          /* index into g_tf or -1 */
+static int thai_font_pct(void *eng, int pct)   /* index into g_tf or -1; pct = Thai height as % of the engine font */
 {
     int i, fr = -1, th; void *dev = NULL, *f = NULL; HRESULT hr; FDESC d;
-    for (i = 0; i < 16; i++) {
-        if (g_tf[i].eng == eng) return g_tf[i].thai ? i : -1;
+    for (i = 0; i < NTF; i++) {
+        if (g_tf[i].eng == eng && g_tf[i].pct == pct) return g_tf[i].thai ? i : -1;
         if (!g_tf[i].eng && fr < 0) fr = i;
     }
     if (fr < 0 || !g_real_create || !g_vt_orig) return -1;
     memset(&d, 0, sizeof d);
     if (FAILED(((PFN_GetDescA)g_vt_orig[4])(eng, &d)) || FAILED(((PFN_GetDevice)g_vt_orig[3])(eng, &dev)) || !dev) return -1;
-    th = d.H * g_thai_scale / 100;           /* empty thai_face = a larger copy of the engine's own face + charset (Q12) */
+    th = d.H * pct / 100;                    /* empty thai_face = a larger copy of the engine's own face + charset (Q12) */
     hr = g_real_create(dev, th, 0, d.Wt ? d.Wt : FW_NORMAL, 1, FALSE, g_thai_face[0] ? (DWORD)g_thai_charset : d.Cs, OUT_DEFAULT_PRECIS, d.Q,
                        DEFAULT_PITCH | FF_DONTCARE, g_thai_face[0] ? g_thai_face : d.Face, &f);
     ((PFN_Release)(*(void ***)dev)[2])(dev);
-    g_tf[fr].eng = eng; g_tf[fr].thai = SUCCEEDED(hr) ? f : NULL;
+    g_tf[fr].eng = eng; g_tf[fr].pct = pct; g_tf[fr].thai = SUCCEEDED(hr) ? f : NULL;
     g_tf[fr].th = th; g_tf[fr].adiff = th - d.H;
     if (f) {                                 /* ASCII is drawn with the engine font: align it on the Thai baseline */
         TEXTMETRICA te, tt;
@@ -550,6 +553,7 @@ static int thai_font(void *eng)          /* index into g_tf or -1 */
             th, d.H, g_tf[fr].dy, g_tf[fr].adiff, g_thai_face[0] ? g_thai_charset : d.Cs, g_thai_face[0] ? g_thai_face : d.Face, (unsigned long)hr, eng, d.Face);
     return g_tf[fr].thai ? fr : -1;
 }
+static int thai_font(void *eng) { return thai_font_pct(eng, g_thai_scale); }
 static INT draw_t(int fi, void *self, void *spr, const WCHAR *c, int n, RECT *rc, DWORD fmt, DWORD col)
 {   /* the engine font goes through g_real_draww directly: its vtable is our wrapped copy */
     return g_engine_glyphs ? g_real_draww(self, spr, c, n, rc, fmt, col) : thai_draw(g_tf[fi].thai, spr, c, n, rc, fmt, col);
@@ -625,14 +629,15 @@ static LONG thai_piece(int k, int fi, void *self, void *spr, LPCWSTR s, int n, L
    U+200B / space opportunities to wrap_width px, '*' forces a break, line pitch = line_pitch_pct of the font height), cached,
    and drawn every frame with the engine font as clusters. The engine itself only ever draws the 3 key characters, so the
    string's original byte length no longer limits the translation.
-   ponytail: typewriter reveal is lost for expanded lines (whole text appears at once); emulate later if wanted. */
+   Typewriter: see tw_reveal. */
 #define TXT_FILE "FS3_TH_text.txt"
 #define MAXID    16384
 #define MAXCL    320
 static WCHAR *g_txt[MAXID];
+static unsigned short g_padt[MAXID];     /* pads after the key in its slots ("id:pads" in FS3_TH_text.txt), 0 = no typewriter */
 static int g_wrap_w = 504;               /* px: 21 CJK cells, the widest line the original authors used */
 static int g_pitch_pct = 108;            /* 26 px pitch for the 24 px dialogue font (measured, text-pipeline.md) */
-static struct lay { int id, fi, wrap; void *font; LONG h, wend; int n; struct { short x, y, st, len; unsigned char ci; } c[MAXCL]; } g_lay[64];   /* menus show dozens of labels: 8 entries re-laid them out every frame */
+static struct lay { int id, fi, wrap; void *font; LONG h, wend; int n; struct { short x, y, st, len; unsigned char ci; } c[MAXCL]; } g_lay[256];   /* menus show dozens of labels (x fitting sizes): 8 entries re-laid them out every frame */
 static int g_lay_next, g_keys_off, g_box_lines, g_quiet;   /* box_lines: overflow check limit (0 = no check) */
 
 static void load_text(void)
@@ -654,7 +659,10 @@ static void load_text(void)
         if (*e) *e++ = 0;
         tab = strchr(p, 9);
         if (p[0] != '#' && tab) {
-            id = atoi(p); tab++;
+            char *cl = strchr(p, ':');
+            id = atoi(p);
+            if (cl && cl < tab && id > 0 && id < MAXID) g_padt[id] = (unsigned short)atoi(cl + 1);
+            tab++;
             n = MultiByteToWideChar(CP_UTF8, 0, tab, -1, NULL, 0);
             if (id > 0 && id < MAXID && n > 0 && (g_txt[id] = (WCHAR *)malloc(n * sizeof(WCHAR))) != NULL) {
                 MultiByteToWideChar(CP_UTF8, 0, tab, -1, g_txt[id], n); count++;
@@ -687,11 +695,11 @@ static LONG space_width(int fi, void *self, LONG h)   /* CALCRECT drops a lone s
    move with the name); "/e" after px = draw at the engine's own size there (narrow panels). First match wins, else
    wrap_width. ":y" after x also requires the key's y (+-2): panels sharing an x (tabs above a list). Every new (key, height,
    x) is logged as "key N at h= x= y=" so rules can be read off the log. */
-static struct { int h, x, y, w, ge, eng; } g_wr[32];
+static struct { int h, x, y, w, ge, eng, clip, fh, right; } g_wr[48];
 static int g_nwr;
 static void load_wrap_rules(const char *v)
 {
-    while (*v && g_nwr < 32) {
+    while (*v && g_nwr < 48) {
         int h, x, y = 0, w, used = 0, ge = 0;
         while (*v == ' ') v++;
         if (sscanf(v, "%d@%n", &h, &used) == 1 && used) {
@@ -700,8 +708,16 @@ static void load_wrap_rules(const char *v)
                 v += used;
                 if (*v == ':' && sscanf(v + 1, "%d%n", &y, &used) == 1) v += 1 + used;
                 if (*v == '=' && sscanf(v + 1, "%d%n", &w, &used) == 1) {
-                    v += 1 + used; g_wr[g_nwr].h = h; g_wr[g_nwr].x = x; g_wr[g_nwr].y = y; g_wr[g_nwr].w = w; g_wr[g_nwr].ge = ge;
-                    g_wr[g_nwr].eng = (v[0] == '/' && (v[1] == 'e' || v[1] == 'E')); g_nwr++;
+                    v += 1 + used; memset(&g_wr[g_nwr], 0, sizeof g_wr[0]);
+                    g_wr[g_nwr].h = h; g_wr[g_nwr].x = x; g_wr[g_nwr].y = y; g_wr[g_nwr].w = w; g_wr[g_nwr].ge = ge;
+                    while (*v == '/') {                  /* flags: /e engine size, /c one line (shrink, then cut with ".."), /hN shrink until N px high, /r px = right edge */
+                        if (v[1] == 'e' || v[1] == 'E') g_wr[g_nwr].eng = 1;
+                        else if (v[1] == 'c' || v[1] == 'C') g_wr[g_nwr].clip = 1;
+                        else if (v[1] == 'r' || v[1] == 'R') g_wr[g_nwr].right = 1;
+                        else if (v[1] == 'h' || v[1] == 'H') g_wr[g_nwr].fh = atoi(v + 2);
+                        v++; while (*v && *v != '/' && *v != ',') v++;
+                    }
+                    g_nwr++;
                 }
             }
         }
@@ -732,8 +748,8 @@ static void load_markup_colors(const char *v)
 static struct lay *layout_text(int fi, void *self, int id, LONG h, int wrap)
 {
     struct lay *L; const WCHAR *t = g_txt[id]; int i, j, len, n = 0, line = 0, ls = 0, lb = -1, k; LONG x = 0, w; unsigned char ci = 0;
-    for (i = 0; i < 64; i++) if (g_lay[i].id == id && g_lay[i].fi == fi && g_lay[i].wrap == wrap && g_lay[i].font == self && g_lay[i].h == h) return &g_lay[i];
-    L = &g_lay[g_lay_next]; g_lay_next = (g_lay_next + 1) & 63;
+    for (i = 0; i < 256; i++) if (g_lay[i].id == id && g_lay[i].fi == fi && g_lay[i].wrap == wrap && g_lay[i].font == self && g_lay[i].h == h) return &g_lay[i];
+    L = &g_lay[g_lay_next]; g_lay_next = (g_lay_next + 1) & 255;
     L->id = id; L->fi = fi; L->wrap = wrap; L->font = self; L->h = h; L->n = 0;
     len = (int)wcslen(t);
     for (i = 0; i < len && n < MAXCL; i = j) {
@@ -769,15 +785,70 @@ static struct lay *layout_text(int fi, void *self, int id, LONG h, int wrap)
     if (!g_quiet && first_time(fnv(fnv(fnv(11ULL, &id, sizeof id), &wrap, sizeof wrap), &h, sizeof h))) hooklog("key %d: %d clusters on %d line(s), wrap %d px, space %ld px, font %s", id, n, line + 1, wrap, space_width(fi, self, h), fi < 0 ? "engine" : "thai");
     return L;
 }
+/* Fitting (rules with /c or /hN): the text is laid out at the rule's size, then 10 % smaller each step down to fit_min_pct,
+   until it fits: /c = one line within the width (still too wide: cut, ending in ".."), /hN = all lines within N px. The chosen
+   size is cached per (text, place), so each label is fitted once. */
+static int g_fit_min = 70;
+static unsigned long long g_fh[1024]; static unsigned char g_fp[1024];
+static int fit_font(void *self, int eng, int pct)   /* -1 = the engine font itself */
+{
+    return (g_engine_glyphs || (eng && pct == 100)) ? -1 : thai_font_pct(self, pct);
+}
+static int lay_lines(const struct lay *L) { int k, n = 0; for (k = 0; k < L->n; k++) if (L->c[k].y + 1 > n) n = L->c[k].y + 1; return n; }
+static int fit_pct(void *self, int id, LONG h, int wrap, int ri)
+{
+    int eng = ri >= 0 && g_wr[ri].eng, clip = ri >= 0 && g_wr[ri].clip, fh = ri >= 0 ? g_wr[ri].fh : 0, base = eng ? 100 : g_thai_scale, pct, fi, slot;
+    unsigned long long hh;
+    if ((!clip && !fh) || g_engine_glyphs) return base;
+    hh = fnv(fnv(fnv(fnv(fnv(5ULL, &id, sizeof id), &h, sizeof h), &wrap, sizeof wrap), &ri, sizeof ri), &self, sizeof self) | 1; slot = (int)(hh & 1023);
+    if (g_fh[slot] == hh) return g_fp[slot];
+    for (pct = base; ; pct -= 10) {
+        struct lay *L; LONG th;
+        fi = fit_font(self, eng, pct);
+        if (fi < 0 && !(eng && pct == 100)) { if (pct < base) pct += 10; break; }   /* no font of this size: keep the last one */
+        th = fi < 0 ? h : g_tf[fi].th;
+        L = layout_text(fi, self, id, h, clip ? 30000 : wrap);
+        if (clip ? L->wend <= wrap : (lay_lines(L) - 1) * (th * g_pitch_pct / 100) + th <= fh) break;
+        if (pct - 10 < g_fit_min) break;
+    }
+    g_fh[slot] = hh; g_fp[slot] = (unsigned char)pct;
+    if (pct != base && first_time(hh ^ 0x55)) hooklog("key %d fitted at %d%% (wrap %d%s)", id, pct, wrap, clip ? ", one line" : "");
+    return pct;
+}
+/* Typewriter: dialogue keys are followed by pad chars U+E200 up to the slot's Chinese length (build_keys.py), so the engine types
+   and waits as long as for the Chinese. The pads it drew since the key's previous draw (= last frame) say how far it got; that
+   share of the Thai clusters is shown. Skipping draws every pad at once -> the whole text. Until a pad has been seen at all
+   (engine never draws them?) texts are shown whole. */
+static struct { int id, cur, prev; DWORD t; } g_tws[8];
+static int g_tw_last = -1, g_tw_next, g_pad_ok, g_typewriter = 1;
+static int tw_find(int id) { int i; for (i = 0; i < 8; i++) if (g_tws[i].id == id) return i; return -1; }
+static void tw_key(int id)
+{
+    int i = tw_find(id);
+    if (i < 0) { i = g_tw_next; g_tw_next = (g_tw_next + 1) & 7; g_tws[i].id = id; g_tws[i].cur = 0; }
+    if (GetTickCount() - g_tws[i].t > 200) g_tws[i].cur = 0;            /* not drawn for a while: shown anew, starts empty */
+    g_tws[i].t = GetTickCount(); g_tws[i].prev = g_tws[i].cur; g_tws[i].cur = 0; g_tw_last = i;
+}
+static void tw_pad(void) { if (!g_pad_ok) { g_pad_ok = 1; hooklog("typewriter: pads are drawn by the engine"); } if (g_tw_last >= 0) g_tws[g_tw_last].cur++; }
+static int tw_reveal(int id, int n)      /* clusters to show */
+{
+    int i = tw_find(id);
+    if (!g_typewriter || !g_pad_ok || !g_padt[id] || i < 0 || g_tws[i].prev >= g_padt[id]) return n;
+    return n * g_tws[i].prev / g_padt[id];
+}
 static LONG expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG h, int id)   /* -> x after the text's last line */
 {
-    int ri = rule_for(h, x0, y0), wrap = ri < 0 ? g_wrap_w : g_wr[ri].w, fi = (ri >= 0 && g_wr[ri].eng) ? -1 : key_fi(self);
-    struct lay *L; RECT rc; int k; LONG th = fi < 0 ? h : g_tf[fi].th, dy = fi < 0 ? 0 : g_tf[fi].dy, pitch = th * g_pitch_pct / 100;
+    int ri = rule_for(h, x0, y0), wrap = ri < 0 ? g_wrap_w : g_wr[ri].w, clip = ri >= 0 && g_wr[ri].clip, fi, k, lim;
+    struct lay *L; RECT rc; LONG th, dy, pitch, cut = -1;
     if (id <= 0 || id >= MAXID || !g_txt[id]) {
         unsigned long long hh = fnv(1469598103934665603ULL, &id, sizeof id);
         if (first_time(hh)) hooklog("key %d: no text in %s", id, TXT_FILE);
         return x0;
     }
+    if (ri >= 0 && g_wr[ri].right) wrap -= x0;                               /* /r: the rule's px is the right edge */
+    if (wrap < h) wrap = h;
+    fi = fit_font(self, ri >= 0 && g_wr[ri].eng, fit_pct(self, id, h, wrap, ri));
+    th = fi < 0 ? h : g_tf[fi].th; dy = fi < 0 ? 0 : g_tf[fi].dy; pitch = th * g_pitch_pct / 100;
     if (g_box_lines > 0) {                   /* once, with the real font: list every text that needs more lines than the box has */
         int i, k2, over = 0, lines; struct lay *C;
         g_quiet = 1;
@@ -793,12 +864,27 @@ static LONG expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG
         unsigned long long hh = fnv(fnv(fnv(7ULL, &id, sizeof id), &h, sizeof h), &x0, sizeof x0);
         if (first_time(hh)) hooklog("key %d at h=%ld x=%ld y=%ld wrap=%d%s", id, h, x0, y0, wrap, fi < 0 ? " engine-size" : "");
     }
-    L = layout_text(fi, self, id, h, wrap); y0 += dy;
-    for (k = 0; k < L->n; k++) {
+    L = layout_text(fi, self, id, h, clip ? 30000 : wrap); y0 += dy; lim = L->n;
+    if (clip && L->wend > wrap) {                                              /* too wide even at the smallest size: cut, end with ".." */
+        LONG ew = measure(-1, self, L"..", 2), end;
+        for (lim = 0; lim < L->n; lim++) {
+            end = lim + 1 < L->n ? L->c[lim + 1].x : L->wend;
+            if (L->c[lim].y || end > wrap - ew) break;
+        }
+        cut = lim < L->n ? L->c[lim].x : L->wend;
+    }
+    k = tw_reveal(id, L->n); if (k < lim) lim = k;
+    for (k = 0; k < lim; k++) {
         SetRect(&rc, x0 + L->c[k].x, y0 + L->c[k].y * pitch, x0 + L->c[k].x + 3 * th, y0 + L->c[k].y * pitch + 2 * th);
         if (fi >= 0 && g_txt[id][L->c[k].st] < 0x80) OffsetRect(&rc, 0, g_tf[fi].adiff);
         kdraw(g_txt[id][L->c[k].st] < 0x80 ? -1 : fi, self, spr, &g_txt[id][L->c[k].st], L->c[k].len, &rc, DT_NOCLIP,
               (L->c[k].ci && g_mc[L->c[k].ci]) ? ((g_mc[L->c[k].ci] & 0xFFFFFF) | (col & 0xFF000000)) : col);
+    }
+    if (cut >= 0) {
+        SetRect(&rc, x0 + cut, y0, x0 + cut + 3 * th, y0 + 2 * th);
+        if (fi >= 0) OffsetRect(&rc, 0, g_tf[fi].adiff);
+        kdraw(-1, self, spr, L"..", 2, &rc, DT_NOCLIP, col);
+        return x0 + wrap;
     }
     return x0 + L->wend;
 }
@@ -907,7 +993,7 @@ static int exe_match(const WCHAR *s, int n)  /* -> text id of the Thai replaceme
             int L;
             id = DYN0 + (g_dynn++ % (MAXID - DYN0));
             free(g_txt[id]); g_txt[id] = _wcsdup(out);
-            for (L = 0; L < 64; L++) if (g_lay[L].id == id) g_lay[L].id = 0;
+            for (L = 0; L < 256; L++) if (g_lay[L].id == id) g_lay[L].id = 0;
             hooklog("exe text %d matched pattern %d -> text %d", n, i, id);
         }
     }
@@ -923,6 +1009,7 @@ static INT key_piece(int k, void *self, void *spr, LPCWSTR s, int n, LPRECT r, D
     g_ln[k].pend = 0;
     for (i = 0; i < n; i++) {
         WCHAR c = s[i];
+        if (c == 0xE200) { tw_pad(); continue; }                         /* typewriter pad: counted, never drawn */
         if (c > 0xE200 && c < 0xE280) { g_ln[k].kst = 0; g_ln[k].kx = pen; g_ln[k].ky = r->top; }
         else if (c == 0xE000) { g_ln[k].kst = 1; g_ln[k].kx = pen; g_ln[k].ky = r->top; }
         else if (c >= 0xE100 && c < 0xE180 && g_ln[k].kst == 1) { g_ln[k].kval = c - 0xE100; g_ln[k].kst = 2; }
@@ -938,6 +1025,7 @@ static INT key_piece(int k, void *self, void *spr, LPCWSTR s, int n, LPRECT r, D
         }
         if (g_ln[k].kst == 0) {
             int id = (c > 0xE200 && c < 0xE280) ? c - 0xE200 : g_ln[k].kval;
+            if (id > 0 && id < MAXID && g_padt[id]) tw_key(id);
             __try { pen = kend = expand_draw(self, spr, col, g_ln[k].kx, g_ln[k].ky, h, id); }
             __except (EXCEPTION_EXECUTE_HANDLER) {
                 if (!g_engine_glyphs) {          /* larger Thai font failed: fall back to the engine font, keep expanding */
@@ -960,6 +1048,8 @@ static INT layout_draw(void *self, void *spr, LPCWSTR s, INT cnt, LPRECT r, DWOR
     int n, i, fi, thai = 0, k; LONG x, pen; RECT rc;
     if (!r || !s || (fmt & DT_CALCRECT)) return g_real_draww(self, spr, s, cnt, r, fmt, col);
     n = (cnt < 0) ? (int)wcslen(s) : cnt;
+    for (i = 0; i < n && s[i] == 0xE200; i++) ;
+    if (n && i == n) { while (i--) tw_pad(); return r->bottom - r->top; }   /* typewriter pads drawn on their own */
     if (g_nrep && !g_keys_off) {                         /* a string hardcoded in FS3.exe: draw its Thai replacement */
         int id = exe_match(s, n);
         if (id) {
@@ -1013,7 +1103,7 @@ static INT layout_draw(void *self, void *spr, LPCWSTR s, INT cnt, LPRECT r, DWOR
 static void for_thai(void *eng, int slot)
 {
     int i;
-    for (i = 0; i < 16; i++) if (g_tf[i].eng == eng && g_tf[i].thai) ((PFN_Void)(*(void ***)g_tf[i].thai)[slot])(g_tf[i].thai);
+    for (i = 0; i < NTF; i++) if (g_tf[i].eng == eng && g_tf[i].thai) ((PFN_Void)(*(void ***)g_tf[i].thai)[slot])(g_tf[i].thai);
 }
 static HRESULT WINAPI my_OnLost(void *self)  { HRESULT hr = ((PFN_Void)g_vt_orig[16])(self); for_thai(self, 16); return hr; }
 static HRESULT WINAPI my_OnReset(void *self) { HRESULT hr = ((PFN_Void)g_vt_orig[17])(self); for_thai(self, 17); return hr; }
@@ -1021,7 +1111,7 @@ static ULONG WINAPI my_Release(void *self)
 {
     ULONG rc = ((PFN_Release)g_vt_orig[2])(self); int i;
     if (rc == 0) {
-        for (i = 0; i < 16; i++) if (g_tf[i].eng == self) {
+        for (i = 0; i < NTF; i++) if (g_tf[i].eng == self) {
             if (g_tf[i].thai) ((PFN_Release)(*(void ***)g_tf[i].thai)[2])(g_tf[i].thai);
             g_tf[i].eng = g_tf[i].thai = NULL;
         }

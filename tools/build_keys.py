@@ -1,6 +1,8 @@
 """Plan A, budget-free text: each translated string slot gets a 6-byte KEY (marker + 2 base-128 digits, Thai-channel v3 codes);
 the proxy looks the key up in FS3_TH_text.txt and draws the full Thai line itself (wrapping at '|' hints / spaces, '*' = forced break).
-usage: build_keys.py <game_copy> <map_v3> <translations.tsv> <out_dir>     (run build_channel.py into the same <out_dir> first)
+usage: build_keys.py <game_copy> <map_v3> <translations.tsv> <out_dir> [key_ids.tsv]   (run build_channel.py into the same <out_dir> first)
+key_ids.tsv (poc/key_ids.tsv) keeps every slot's text id across builds and is updated in place: saves store keys.
+Dialogue keys are followed by pad chars (U+E200) up to the slot's length: the engine types and waits as for the Chinese.
 TSV: member <TAB> block <TAB> offset_in_block [<TAB> source] <TAB> thai   (export_strings.py writes the 5-column form)
 Members found in FS3UpdataChs.dat are patched there; the others (e.g. Bin/FS2_ItemHelp.bin) in FS3Bin.dat, rebuilt from
 FS3Bin.dat.bak + the channel table BIG2GB.idx of <out_dir>/FS3Bin.dat, so re-running never stacks old edits.
@@ -12,7 +14,7 @@ KEY1* * * *KEY2* ...  (one key per page + blank lines, like the originals pad th
 import os, sys, hashlib, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fszip, fsdialog, fstables, fsexe, thaichan, thaibreak
-game, mapf, tsv, out = sys.argv[1:5]
+game, mapf, tsv, out = sys.argv[1:5]; REG = sys.argv[5] if len(sys.argv) > 5 else None
 t2b, _ = thaichan.load_map(mapf)
 assert chr(0xE000) in t2b and chr(0xE17F) in t2b and chr(0xE27F) in t2b, 'map has no (short) KEY codes - run build_channel.py first'
 rows = [ln.rstrip('\n').split('\t') for ln in open(tsv, encoding='utf-8') if ln.strip() and not ln.startswith('#')]
@@ -44,19 +46,46 @@ for r in rows:
     if not fstables.kind(member) and n >= 6 and len(lines) > PAGE:                   # multi-page dialogue: one text per page
         thai = tuple('*'.join(lines[p:p + PAGE]).rstrip('* ') or ' ' for p in range(0, len(lines), PAGE))
     items.append((member, (blk, off), thai, n))
-ids = {}                                       # texts used by a < 6-byte slot get the low ids: a SHORT key U+E200+id is one char
-for it in sorted(items, key=lambda it: it[3] >= 6):
-    for t in (it[2] if isinstance(it[2], tuple) else (it[2],)): ids.setdefault(t, len(ids) + 1)
+pages = lambda text: text if isinstance(text, tuple) else (text,)
+addr, short = collections.defaultdict(list), set()                                # text -> slot addresses (member, block, offset, page)
+for member, at, text, n in items:
+    for p, t in enumerate(pages(text)): addr[t].append((member, *at, p))
+    if n < 6: short.add(text)
+reg = {}                                       # REGISTRY: saves store keys (party names, map / mission names), so an id must keep
+if REG and os.path.exists(REG):                # meaning the same slot in every later build; ids are never reused (plana-b4: renumbered
+    for ln in open(REG, encoding='utf-8'):     # ids turned saved names into dialogue lines)
+        if ln.strip() and not ln.startswith('#'): i, m, b, o, p = ln.rstrip('\n').split('\t'); reg[(m, int(b), int(o), int(p))] = int(i)
+top, stop, used, ids = max(reg.values(), default=127), max([i for i in reg.values() if i < 128], default=0), set(), {}
+for it in sorted(items, key=lambda it: it[3] >= 6):                                # texts used by a < 6-byte slot need a low id: a SHORT key U+E200+id is one char
+    for t in pages(it[2]):
+        if t in ids: continue
+        old = sorted(i for i in (reg.get(a) for a in addr[t]) if i and i not in used and (i < 128 or t not in short))
+        if old: ids[t] = old[0]
+        elif t in short: stop += 1; ids[t] = stop
+        else: top = max(top, 127) + 1; ids[t] = top
+        used.add(ids[t])
+assert stop < 128, 'more than 127 distinct texts in short slots'
+assert max(ids.values()) < 16256, 'ids reached the proxy dynamic range (DYN0)'
+if REG:
+    for t, aa in addr.items():
+        for a in aa: reg[a] = ids[t]
+    with open(REG, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('# id\tmember\tblock\toffset\tpage   text ids by slot address: an id is never reused (saves store keys) -- updated by tools/build_keys.py\n')
+        for a, i in sorted(reg.items(), key=lambda kv: (kv[1], kv[0])): f.write(f'{i}\t{a[0]}\t{a[1]}\t{a[2]}\t{a[3]}\n')
 K = lambda i: chr(0xE000) + chr(0xE100 + i // 128) + chr(0xE100 + i % 128)
-assert len(ids) < 128 * 128
+PAD = chr(0xE200)                              # typewriter pad after a dialogue key: the engine reveals the slot at its Chinese length (and
+padt = {}                                      # waits as long); the proxy shows Thai in step with the pads drawn. text -> fewest pads of its slots
 by_member, nshort = collections.defaultdict(dict), 0
 for member, at, text, n in items:
-    if isinstance(text, tuple):                                                     # pages: KEY + blank lines, page after page
-        key = '*'.join(K(ids[t]) + '* ' * (PAGE - 1) for t in text[:-1]) + ('*' if len(text) > 1 else '') + K(ids[text[-1]])
+    if n >= 6 and not fstables.kind(member):                                        # dialogue: KEY + pads, page after page (KEY + blank lines)
+        pp, sep = pages(text), '* ' * (PAGE - 1) + '*'; spare = (n - 6 * len(pp) - len(sep) * (len(pp) - 1)) // 2; tot = sum(map(len, pp))
+        pads = [spare * len(t) // tot for t in pp]
+        for t, p in zip(pp, pads): padt[t] = min(padt.get(t, p), p)
+        key = ''.join(K(ids[t]) + PAD * p + (sep if j < len(pp) - 1 else '') for j, (t, p) in enumerate(zip(pp, pads)))
         by_member[member][at] = thaichan.encode(key, t2b); continue
     i = ids[text]
     if n >= 6: key = K(i)
-    else: assert i < 128, f'more than 127 distinct texts in short slots ({member} {at})'; key = chr(0xE200 + i); nshort += 1
+    else: assert i < 128, f'short slot text got id {i} ({member} {at})'; key = chr(0xE200 + i); nshort += 1
     by_member[member][at] = thaichan.encode(key, t2b)
 repl = collections.defaultdict(dict)
 for member, edits in by_member.items():
@@ -102,8 +131,8 @@ with open(f'{out}/FS3_TH_exe.txt', 'w', encoding='utf-8', newline='\n') as f:
         seen_p.add(pat); nn += 1; f.write(f"{pat}\t{(thai if '|' in thai else thaibreak.breaks(thai)).replace('|', chr(0x200b))}\n")
 report.append(f'FS3_TH_exe.txt: {len(exe_rows)} drawn-text replacements + {nn} names / places')
 with open(f'{out}/FS3_TH_text.txt', 'w', encoding='utf-8', newline='\n') as f:
-    f.write('# id<TAB>thai   (U+200B = allowed break, * = forced break) -- generated by tools/build_keys.py\n')
-    for text, i in sorted(ids.items(), key=lambda kv: kv[1]): f.write(f'{i}\t{text}\n')
+    f.write('# id[:pads]<TAB>thai   (U+200B = allowed break, * = forced break, pads = typewriter pads after the key) -- generated by tools/build_keys.py\n')
+    for text, i in sorted(ids.items(), key=lambda kv: kv[1]): f.write(f"{i}{':%d' % padt[text] if padt.get(text) else ''}\t{text}\n")
 with open(f'{out}/FS3_TH_ids.tsv', 'w', encoding='utf-8', newline='\n') as f:     # addresses only: for overflow_report.py
     f.write('# id\tmember\tblock\toffset_in_block\n')
     for member, at, text, _ in items:
