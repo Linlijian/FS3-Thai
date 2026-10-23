@@ -51,3 +51,7 @@ Menu/AS_ArrayName0004.dds@28,6,136,40	ปราบมาร
 Menu/AS_ArrayName0005.dds@28,6,136,40	แปดประตู
 Menu/AS_ArrayName0006.dds@28,6,136,40	เขี้ยวหมาป่า
 Menu/AS_ArrayName0007.dds@28,6,136,40	ยมโลก
+# vertical red signs of the secret-city screens (x,y,w,h,v: text turned to read top to bottom)
+Menu/WH_Compound_Title.dds@10,8,60,152,v	หอเทพบริสุทธิ์
+Menu/WH_Recycle_Title.dds@10,8,60,152,v	คลังชำระหลอม
+Menu/WH_LevelUp_Title.dds@10,8,60,152,v	นครกิเลน

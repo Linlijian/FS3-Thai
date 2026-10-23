@@ -1,6 +1,7 @@
 """Thai labels for the image-only UI texts in FS3UI.pak (menu bar, sub tabs, ...).
 usage: build_ui.py <game_copy> <labels.tsv> <out_dir>
 labels.tsv: texture base (path inside FS3UI.pak without _Nor/_Ove/_Pre/_Dis.dds, e.g. Menu/M_Team) <TAB> thai [<TAB> extra px over the original ink width, default 28 = top-bar pitch]
+           or Dir/File.dds@x,y,w,h <TAB> thai (atlas region) or Dir/File.dds@x,y,w,h,v <TAB> thai (vertical red sign, text turned 90 degrees)
 Every state file of a base is redrawn: the original's glyph box and colours (top / bottom of the ink, for the gradient) are
 measured, the Thai label is drawn with a Windows Thai font (GDI shapes vowels / tones), a white glow like the original's is
 added, and the texture is written as uncompressed A8R8G8B8 DDS. A hand-edited <out_dir>/../ui_edit/<file>.png (same size)
@@ -112,13 +113,41 @@ def render_region(px, w, h, rect, text):
                 o = [(col[k] * al + o[k] * o[3] * (255 - al) // 255) // max(1, na) for k in range(3)] + [na]
             out[(y * w + x) * 4:(y * w + x) * 4 + 4] = bytes(o)
     return bytes(out)
+def render_vertical(px, w, h, rect, text):
+    """vertical signs (red pill, white CJK stacked top to bottom): repaint the light pixels inside rect with the pill's red, then
+    draw the Thai turned 90 degrees clockwise (reads top to bottom) in white with a dark red edge."""
+    rx, ry, rw, rh = rect; out = bytearray(px)
+    isred = lambda x, y: px[(y * w + x) * 4 + 3] > 200 and px[(y * w + x) * 4] > 150 and px[(y * w + x) * 4 + 1] < 80
+    reds = [px[(y * w + x) * 4:(y * w + x) * 4 + 3] for y in range(ry, ry + rh) for x in range(rx, rx + rw) if isred(x, y)]
+    red = bytes(sum(c[k] for c in reds) // len(reds) for k in range(3))
+    for y in range(ry, ry + rh):                          # each row between its outermost red pixels: strokes and their dark edges
+        xs = [x for x in range(w) if isred(x, y)]
+        for x in range(min(xs), max(xs) + 1) if xs else (): out[(y * w + x) * 4:(y * w + x) * 4 + 4] = red + b'\xff'
+    size = int(rw * 0.9)
+    while True:                                           # laid out horizontally in an rh x rw buffer, then turned
+        a, tw = mask(text, rh, rw, size, rh // 2, rw // 2)
+        if tw <= rh - 4 or size <= 8: break
+        size -= 1
+    r = bytearray(w * h)
+    for Y in range(rw):
+        for X in range(rh): r[(ry + X) * w + rx + rw - 1 - Y] = a[Y * rh + X]
+    for y in range(max(0, ry - 1), min(h, ry + rh + 1)):
+        for x in range(max(0, rx - 1), min(w, rx + rw + 1)):
+            ta = r[y * w + x]; ga = max(r[yy * w + xx] for yy in range(max(0, y - 1), min(h, y + 2)) for xx in range(max(0, x - 1), min(w, x + 2)))
+            o = list(out[(y * w + x) * 4:(y * w + x) * 4 + 4])
+            for col, al in (((90, 0, 0), ga), ((255, 255, 255), ta)):
+                if not al: continue
+                na = al + o[3] * (255 - al) // 255
+                o = [(col[k] * al + o[k] * o[3] * (255 - al) // 255) // max(1, na) for k in range(3)] + [na]
+            out[(y * w + x) * 4:(y * w + x) * 4 + 4] = bytes(o)
+    return bytes(out)
 if __name__ == '__main__':
     game, labels, out = sys.argv[1:4]
     rows = [ln.rstrip('\n').split('\t') for ln in open(labels, encoding='utf-8') if ln.strip() and not ln.startswith('#')]
     want = {r[0]: r[1] for r in rows if '@' not in r[0]}; extra = {r[0]: int(r[2]) for r in rows if len(r) > 2}
     regions = {}                                          # 'Dir/File.dds@x,y,w,h' rows: atlas regions, several per file
     for r in rows:
-        if '@' in r[0]: f, rc = r[0].split('@'); regions.setdefault(f, []).append((tuple(map(int, rc.split(','))), r[1]))
+        if '@' in r[0]: f, rc = r[0].split('@'); regions.setdefault(f, []).append((tuple(int(v) if v.isdigit() else v for v in rc.split(',')), r[1]))
     buf = open(fszip.orig(game, 'Pack/FS3UI.pak'), 'rb').read(); (kids, pname, ver), _, _ = ujpak.read_tree(buf)
     os.makedirs(f'{out}/ui_preview', exist_ok=True); edit_dir = os.path.join(os.path.dirname(os.path.abspath(out)), 'ui_edit'); done = []
     def visit(nodes, path):
@@ -132,7 +161,7 @@ if __name__ == '__main__':
             if os.path.exists(ed): ew, eh, new = fsdds.read_png(ed); assert (ew, eh) == (w, h), ed
             elif p in regions:
                 new = px
-                for rc, t in regions[p]: new = render_region(new, w, h, rc, t)
+                for rc, t in regions[p]: new = render_vertical(new, w, h, rc[:4], t) if len(rc) > 4 else render_region(new, w, h, rc, t)
             else: new = render(px, w, h, want[base], extra.get(base, 28))
             fsdds.write_dds(tmp, w, h, new, mips); n.data = open(tmp, 'rb').read()
             fsdds.write_png(f"{out}/ui_preview/{p.replace('/', '_')[:-4]}.png", w, h, new); done.append(p)

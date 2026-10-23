@@ -122,7 +122,7 @@ static void log_bytes(const char *tag, const unsigned char *p, int n)
 
 static void load_config(void)
 {
-    char v[1024];
+    char v[2048];
     /* GetPrivateProfileString resolves a bare filename against the Windows
        directory, so the path has to be absolute. Defaults = the in-game tested FS3_TH_hook.ini, so a missing ini is
        harmless (plana-a28: no ini -> old PoC defaults, charset 222 crashed on the first Thai mark and disabled Thai). */
@@ -149,7 +149,7 @@ static void load_config(void)
     g_tw_pct = GetPrivateProfileIntA("hook", "typewriter_pct", 70, g_ini);
     if (g_tw_pct < 10) g_tw_pct = 10;
     GetPrivateProfileStringA("hook", "markup_colors", "1:fff5002d", v, sizeof v, g_ini); load_markup_colors(v);
-    GetPrivateProfileStringA("hook", "wrap_rules", "20@>330:204=300/e,24@>370:247=300/e,12@600=300/e,12@680=300/e,16@10:463=300/e,16@>30:463=300/e,16@288:330=300/e,16@328:363=300/e,20@294:70=300/e,20@294:98=300/e,20@294:126=300/e,20@294:154=300/e,20@294:182=300/e,24@55=300/e,20@32:209=300/e,20@>240:104=300/e,24@>440:101=300/e,20@>220:111=300/e,20@>220:139=300/e,20@328=300/e,20@388=300/e,12@689=96,12@673=112,12@662=128,24@>640=130/e/c,20@>640=135/e/c,20@260=140/e/c,12@17=72/e/c,12@>730:85=62/e,20@312=280/c,20@449=150/c,24@>300:471=770/r/h112,24@>100:467=770/r/h112,24@0:471=536/r/h112,12@0=168", v, sizeof v, g_ini); load_wrap_rules(v);
+    GetPrivateProfileStringA("hook", "wrap_rules", "20@60:112=110/c,20@256:77=80/c,20@256:112=80/c,20@>20:153=40/c,20@50=120/c,20@219=115/c,24@61:483=120/c,24@458:483=120/c,12@48:521=37/c,12@445:521=37/c,20@>440:161=40/c,20@>590:192=105/c,20@480=115/c,12@509:446=34/c,12@571:446=36/c,20@>400:78=115/c,20@>400:292=160/c,20@>390:389=85/c,20@>330:204=300/e,24@>370:247=300/e,12@600=300/e,12@680=300/e,16@10:463=300/e,16@>30:463=300/e,16@288:330=300/e,16@328:363=300/e,20@294:70=300/e,20@294:98=300/e,20@294:126=300/e,20@294:154=300/e,20@294:182=300/e,24@55=300/e,20@32:209=300/e,20@>240:104=300/e,24@>440:101=300/e,20@>220:111=300/e,20@>220:139=300/e,20@328=300/e,20@388=300/e,12@689=96,12@673=112,12@662=128,24@>640=130/e/c,20@>640=135/e/c,20@260=140/e/c,12@17=72/e/c,12@>730:85=62/e,20@312=280/c,20@449=150/c,24@>300:471=770/r/h112,24@>100:467=770/r/h112,24@0:471=536/r/h112,12@0=168", v, sizeof v, g_ini); load_wrap_rules(v);
 }
 
 /* Resolve paths next to this DLL rather than the process CWD. */
@@ -697,11 +697,11 @@ static LONG space_width(int fi, void *self, LONG h)   /* CALCRECT drops a lone s
    move with the name); "/e" after px = draw at the engine's own size there (narrow panels). First match wins, else
    wrap_width. ":y" after x also requires the key's y (+-2): panels sharing an x (tabs above a list). Every new (key, height,
    x) is logged as "key N at h= x= y=" so rules can be read off the log. */
-static struct { int h, x, y, w, ge, eng, clip, fh, right; } g_wr[48];
+static struct { int h, x, y, w, ge, eng, clip, fh, right; } g_wr[64];
 static int g_nwr;
 static void load_wrap_rules(const char *v)
 {
-    while (*v && g_nwr < 48) {
+    while (*v && g_nwr < 64) {
         int h, x, y = 0, w, used = 0, ge = 0;
         while (*v == ' ') v++;
         if (sscanf(v, "%d@%n", &h, &used) == 1 && used) {
