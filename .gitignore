@@ -8,6 +8,7 @@
 !/poc/
 !/proxy/
 !/installer/
+!/release/
 __pycache__/
 *.pyc
 # build outputs
