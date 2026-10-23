@@ -1,5 +1,7 @@
 """FS3 Thai installer (runs on the player's PC, standard library only). Shipped inside app.zip as __main__.py (run: python -I app.zip install|uninstall [--game DIR] [--yes]).
-Package layout: install.exe uninstall.exe app.zip(__main__.py + tools/*.py) mod/{d3dx9_25.dll, FS3_TH_hook.ini, channel_base.txt, translations.tsv, key_ids.tsv, ui_labels.tsv, source_hashes.txt} python/
+Package layout (unpacked by FS3_Thai_Setup.exe into a temp folder): app.zip(__main__.py + tools/*.py) mod/{d3dx9_25.dll, channel_base.txt,
+translations.tsv, key_ids.tsv, ui_labels.tsv, source_hashes.txt} python/. No ini is placed: the DLL carries its settings; a FS3_TH_hook.ini
+the player writes into the game folder overrides them (an ini left by an older version is renamed to FS3_TH_hook.ini.old).
 install: checks the player's original files by sha256 -> backs them up (FS3_TH_backup, first time only) -> BUILDS the Thai files from
 those originals (no game data is shipped) -> stages *.th_new -> renames into place; any failure restores the backup.
 Console text is English on purpose (cmd.exe cannot show Thai)."""
@@ -100,11 +102,12 @@ def install(game):
             if not os.path.isfile(dll): raise Fail('d3dx9_25.dll not found in the game folder.')
             if sha(dll) == sha(ours): raise Fail('d3dx9_25.dll is already the mod\'s but d3dx9_25_orig.dll is missing - Verify integrity in Steam, then run again.')
         ini = os.path.join(game, 'FS3_TH_hook.ini')
-        if os.path.isfile(ini) and sha(ini) != sha(os.path.join(MOD, 'FS3_TH_hook.ini')): shutil.copyfile(ini, ini + '.old')
+        if os.path.isfile(ini):                                     # settings live in the DLL; an older version's ini would override them
+            os.replace(ini, ini + '.old'); print('  your FS3_TH_hook.ini was renamed to FS3_TH_hook.ini.old (the mod no longer needs it)')
         todo = [put(os.path.join(out, 'FS3Bin.dat'), os.path.join(game, 'Pack', 'FS3Bin.dat')), put(os.path.join(out, 'FS3UpdataChs.dat'), os.path.join(game, 'Pack', 'FS3UpdataChs.dat')),
                 put(os.path.join(out, 'FS3UI.pak'), os.path.join(game, 'Pack', 'FS3UI.pak')), put(os.path.join(out, 'CFG', 'DefaultString.bin'), os.path.join(game, 'CFG', 'DefaultString.bin')),
                 put(os.path.join(out, 'CFG', 'Mission.bin'), os.path.join(game, 'CFG', 'Mission.bin'))]
-        todo += [put(os.path.join(out, f), os.path.join(game, f)) for f in PLACED] + [put(os.path.join(MOD, 'FS3_TH_hook.ini'), ini)]
+        todo += [put(os.path.join(out, f), os.path.join(game, f)) for f in PLACED]
         swap = not os.path.isfile(orig); dll_new = put(ours, dll) and dll
         try:
             commit(todo)
@@ -115,9 +118,9 @@ def install(game):
         except Fail:
             clean(todo + [dll_new]); restore(game, bk); raise
         with open(os.path.join(game, 'FS3_TH_installed.txt'), 'w', encoding='utf-8') as f:
-            f.write('FS3 Thai mod installed\n' + ''.join(f'{sha(os.path.join(game, p))}  {p}\n' for p in REPLACED + PLACED + ['FS3_TH_hook.ini', 'd3dx9_25.dll']))
+            f.write('FS3 Thai mod installed\n' + ''.join(f'{sha(os.path.join(game, p))}  {p}\n' for p in REPLACED + PLACED + ['d3dx9_25.dll']))
     finally: shutil.rmtree(tmp, ignore_errors=True)
-    print('\nDone. Start the game from Steam as usual.\nTo remove the mod: run uninstall.exe (restores your original files).')
+    print('\nDone. Start the game from Steam as usual.\nTo remove the mod: run FS3_Thai_Setup.exe again and choose 2 (restores your original files).')
 def uninstall(game):
     bk = os.path.join(game, 'FS3_TH_backup')
     if not os.path.isdir(bk): raise Fail('FS3_TH_backup not found - nothing to restore (if the game misbehaves: Steam > Verify integrity of game files).')
@@ -137,7 +140,13 @@ if __name__ == '__main__':
         import runpy; name = sys.argv[2]; sys.argv = [name + '.py', *sys.argv[3:]]; runpy.run_module(name, run_name='__main__'); sys.exit(0)
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'install'; code = 0
     try:
-        if cmd not in ('install', 'uninstall'): raise Fail('usage: install|uninstall [--game DIR] [--yes]')
+        if cmd == 'menu':                                            # FS3_Thai_Setup.exe double-clicked
+            print('FS3 Thai - Thai text for Fantasia Sango 3 (Steam)\n  1 = Install / update the Thai mod\n  2 = Uninstall (restore the original game files)')
+            try: c = input('Choose 1 or 2, then press Enter: ').strip()
+            except EOFError: c = ''
+            cmd = {'1': 'install', '2': 'uninstall'}.get(c)
+            if not cmd: raise Fail('Cancelled.')
+        if cmd not in ('install', 'uninstall'): raise Fail('usage: menu|install|uninstall [--game DIR] [--yes]')
         game = find_game(); confirm(cmd, game); {'install': install, 'uninstall': uninstall}[cmd](game)
     except Fail as e: print('\nERROR:', e); code = 1
     except Exception as e: print('\nUNEXPECTED ERROR:', repr(e)); code = 2

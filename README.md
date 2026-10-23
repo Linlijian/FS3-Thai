@@ -65,7 +65,7 @@ Install (back up the originals first): `work/out/FS3Bin.dat` and `work/out/FS3Up
 `work/out/FS3_TH_map.txt`, `work/out/FS3_TH_text.txt`, `proxy/d3dx9_25.dll`, `proxy/FS3_TH_hook.ini` -> game folder
 (rename the game's own `d3dx9_25.dll` to `d3dx9_25_orig.dll` first). Step-by-step test procedures: [docs/runtime-tests.md](docs/runtime-tests.md).
 
-### Settings players may want to change (`FS3_TH_hook.ini` in the game folder)
+### Settings players may want to change (built into the DLL; override with an `FS3_TH_hook.ini` in the game folder, e.g. `[hook]` + `typewriter_pct=50`)
 | key | default | meaning |
 |---|---|---|
 | `typewriter` | 1 | dialogue types out character by character; 0 = whole text at once |
@@ -85,9 +85,13 @@ a backup goes to `work/save_backup/`).
 ```bat
 python -I tools/make_dist.py work/fs3-copy work/strings_master.tsv proxy/d3dx9_25.dll work/launcher/install.exe work/dist work/python-embed.zip
 ```
--> `work/dist/FS3_Thai.zip`: install.exe / uninstall.exe, the proxy, ini, translations without the Chinese source column,
-key_ids.tsv, embedded Python. No game files: install.exe checks the player's originals (sha256), backs them up and builds
-the Thai files on the player's PC.
+-> **`work/dist/FS3_Thai_Setup.exe`, one file** (~10.5 MB): the launcher (`installer/launcher.c`) with a zip appended (installer,
+build tools, proxy DLL, translations without the Chinese source column, key_ids.tsv, embedded Python). Double-click: it unpacks
+to a temp folder with Windows' own `tar.exe`, shows 1 = install / 2 = uninstall, and deletes the temp folder afterwards.
+No game files inside: the installer checks the player's originals (sha256), backs them up and builds the Thai files on the
+player's PC. No ini is installed: the DLL carries the tested settings, and an `FS3_TH_hook.ini` in the game folder only
+overrides them (an older version's ini is renamed `.old`). `work/dist/README.txt` = text for the download page.
+Testing the setup exe: always pass `--game <test copy>`; without it the installer finds the real Steam folder.
 
 Tools take `--set original|patched` where it matters (`original` = use `Pack/FS3Bin.dat.bak` as the clean reference).
 
