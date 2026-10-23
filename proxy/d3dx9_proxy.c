@@ -149,7 +149,7 @@ static void load_config(void)
     g_tw_pct = GetPrivateProfileIntA("hook", "typewriter_pct", 70, g_ini);
     if (g_tw_pct < 10) g_tw_pct = 10;
     GetPrivateProfileStringA("hook", "markup_colors", "1:fff5002d", v, sizeof v, g_ini); load_markup_colors(v);
-    GetPrivateProfileStringA("hook", "wrap_rules", "20@60:112=110/c,20@256:77=80/c,20@256:112=80/c,20@>20:153=40/c,20@50=120/c,20@219=115/c,24@61:483=120/c,24@458:483=120/c,12@48:521=37/c,12@445:521=37/c,20@>440:161=40/c,20@>590:192=105/c,20@480=115/c,12@509:446=34/c,12@571:446=36/c,20@>400:78=115/c,20@>400:292=160/c,20@>390:389=85/c,20@>330:204=300/e,24@>370:247=300/e,12@600=300/e,12@680=300/e,16@10:463=300/e,16@>30:463=300/e,16@288:330=300/e,16@328:363=300/e,20@294:70=300/e,20@294:98=300/e,20@294:126=300/e,20@294:154=300/e,20@294:182=300/e,24@55=300/e,20@32:209=300/e,20@>240:104=300/e,24@>440:101=300/e,20@>220:111=300/e,20@>220:139=300/e,20@328=300/e,20@388=300/e,12@689=96,12@673=112,12@662=128,24@>640=130/e/c,20@>640=135/e/c,20@260=140/e/c,12@17=72/e/c,12@>730:85=62/e,20@312=280/c,20@449=150/c,24@>300:471=770/r/h112,24@>100:467=770/r/h112,24@0:471=536/r/h112,12@0=168", v, sizeof v, g_ini); load_wrap_rules(v);
+    GetPrivateProfileStringA("hook", "wrap_rules", "12@>590:533=776/r/c,12@>590:547=776/r/c,12@>590:561=776/r/c,12@>590:575=776/r/c,20@60:112=110/c,20@256:77=80/c,20@256:112=80/c,20@>20:153=40/c,20@50=120/c,20@219=115/c,24@61:483=120/c,24@458:483=120/c,12@48:521=37/c,12@445:521=37/c,20@>440:161=40/c,20@>590:192=85/c,20@480=115/c,12@509:446=34/c,12@571:446=36/c,20@>400:78=115/c,20@>400:292=160/c,20@>390:389=85/c,20@>330:204=300/e,24@>370:247=300/e,12@600=300/e,12@680=300/e,16@10:463=300/e,16@>30:463=300/e,16@288:330=300/e,16@328:363=300/e,20@294:70=300/e,20@294:98=300/e,20@294:126=300/e,20@294:154=300/e,20@294:182=300/e,24@55=300/e,20@32:209=300/e,20@>240:104=300/e,24@>440:101=300/e,20@>220:111=300/e,20@>220:139=300/e,20@328=300/e,20@388=300/e,12@689=96,12@673=112,12@662=128,24@>640=130/e/c,20@>640=135/e/c,20@260=140/e/c,12@17=72/e/c,12@>730:85=62/e,20@312=280/c,20@449=150/c,24@>300:471=770/r/h112,24@>100:467=770/r/h112,24@0:471=536/r/h112,12@0=168", v, sizeof v, g_ini); load_wrap_rules(v);
 }
 
 /* Resolve paths next to this DLL rather than the process CWD. */
@@ -519,7 +519,8 @@ typedef HRESULT (WINAPI *PFN_GetTM)(void *, TEXTMETRICA *);
 #define NTF 48                           /* Thai fonts: one per (engine font, size %) -- fitting text tries smaller sizes */
 static struct { void *eng, *thai; int pct; LONG dy, th, adiff; } g_tf[NTF];   /* adiff = Thai ascent - engine ascent (baseline match) */
 static LONG g_tw[NTF][0x60];             /* advance cache U+0E00..0E5F per Thai font, -1 = unknown */
-static struct { void *font; LONG y, last_x, our_x, adv, base_x, ty, h; WCHAR cl[8]; int cln, used, pend, fi, kst, kval; LONG kx, ky; void *self, *spr; DWORD col; } g_ln[32];
+static struct { void *font; LONG y, last_x, our_x, adv, base_x, ty, h; WCHAR cl[8]; int cln, used, pend, fi, kst, kval; LONG kx, ky; void *self, *spr; DWORD col;
+         WCHAR acc[12], prev[12]; int accn, prevn, rep; LONG rx; } g_ln[32];   /* acc: CJK text of the row this pass (names drawn char by char) */
 static int g_ln_next, g_tw_init;
 
 static int is_thai(WCHAR c)  { return c >= 0x0E01 && c <= 0x0E5B; }
@@ -790,7 +791,8 @@ static struct lay *layout_text(int fi, void *self, int id, LONG h, int wrap)
 /* Fitting (rules with /c or /hN): the text is laid out at the rule's size, then 10 % smaller each step down to fit_min_pct,
    until it fits: /c = one line within the width (still too wide: cut, ending in ".."), /hN = all lines within N px. The chosen
    size is cached per (text, place), so each label is fitted once. */
-static int g_fit_min = 70;
+static int g_fit_min = 70, g_force_pct;   /* force_pct: size chosen for a whole line of keys (key_piece) */
+static LONG g_kdy;                        /* y offset of the last line of the text expand_draw just drew */
 static unsigned long long g_fh[1024]; static unsigned char g_fp[1024];
 static int fit_font(void *self, int eng, int pct)   /* -1 = the engine font itself */
 {
@@ -801,6 +803,7 @@ static int fit_pct(void *self, int id, LONG h, int wrap, int ri)
 {
     int eng = ri >= 0 && g_wr[ri].eng, clip = ri >= 0 && g_wr[ri].clip, fh = ri >= 0 ? g_wr[ri].fh : 0, base = eng ? 100 : g_thai_scale, pct, fi, slot;
     unsigned long long hh;
+    if (g_force_pct && !g_engine_glyphs) return g_force_pct;
     if ((!clip && !fh) || g_engine_glyphs) return base;
     hh = fnv(fnv(fnv(fnv(fnv(5ULL, &id, sizeof id), &h, sizeof h), &wrap, sizeof wrap), &ri, sizeof ri), &self, sizeof self) | 1; slot = (int)(hh & 1023);
     if (g_fh[slot] == hh) return g_fp[slot];
@@ -902,8 +905,9 @@ static LONG expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG
         SetRect(&rc, x0 + cut, y0, x0 + cut + 3 * th, y0 + 2 * th);
         if (fi >= 0) OffsetRect(&rc, 0, g_tf[fi].adiff);
         kdraw(-1, self, spr, L"..", 2, &rc, DT_NOCLIP, col);
-        return x0 + wrap;
+        g_kdy = 0; return x0 + wrap;
     }
+    g_kdy = L->n ? L->c[L->n - 1].y * pitch : 0;
     return x0 + L->wend;
 }
 /* ---------------------------------------------- drawn-text replacement (strings hardcoded in FS3.exe) */
@@ -1018,18 +1022,43 @@ static int exe_match(const WCHAR *s, int n)  /* -> text id of the Thai replaceme
     g_mh[slot] = h; g_mid[slot] = (short)id;
     return id;
 }
+static int exe_lit(const WCHAR *s, int n)    /* text id when s is a whole literal entry of FS3_TH_exe.txt (a name), else 0 */
+{
+    WCHAR buf[16]; unsigned long long h; int k;
+    if (!g_nrep || n < 2 || n > 15) return 0;
+    memcpy(buf, s, n * sizeof(WCHAR)); buf[n] = 0;
+    h = fnv(1469598103934665603ULL, s, n * 2) | 1;
+    for (k = (int)(h % NLH); g_lh[k]; k = (k + 1) % NLH) if (g_lh[k] == h && !wcscmp(g_rp[g_li[k]], buf)) return exe_match(s, n);
+    return 0;
+}
 static int is_key(WCHAR c) { return c == 0xE000 || (c >= 0xE100 && c < 0xE180) || (c > 0xE200 && c < 0xE280); }   /* E2xx = one-char SHORT key (slots < 6 B) */
 /* Text after a key on the same row ("熱鍵" + "1", drawn cell by cell) would land at its engine position, under the
    longer Thai: the pen after the expansion (kend) is kept and the row's next pieces continue from there. */
 static INT key_piece(int k, void *self, void *spr, LPCWSTR s, int n, LPRECT r, DWORD col)
 {
-    int i; LONG kend = -1, pen = r->left, h = r->bottom - r->top;   /* pen: text before a key ("9" + KEY) is drawn, the key follows it */
+    int i, ri, nk = 0; LONG kend = -1, pen = r->left, h = r->bottom - r->top, dy = 0;   /* pen: text before a key ("9" + KEY) is drawn, the key follows it */
     g_ln[k].pend = 0;
+    for (i = 0; i < n; i++) if (s[i] == 0xE000 || (s[i] > 0xE200 && s[i] < 0xE280)) nk++;
+    ri = nk > 1 ? rule_for(h, r->left, r->top) : -1;
+    if (ri >= 0 && g_wr[ri].right && g_wr[ri].clip && !g_engine_glyphs) {   /* several keys in one line (/r/c): one size for the whole line */
+        int eng = g_wr[ri].eng, base = eng ? 100 : g_thai_scale, fi = fit_font(self, eng, base), id; LONG tot = 0, avail = g_wr[ri].w - r->left;
+        for (i = 0; i < n; i++) {
+            WCHAR c = s[i];
+            if (c > 0xE200 && c < 0xE280) id = c - 0xE200;
+            else if (c == 0xE000 && i + 2 < n) { id = (s[i + 1] - 0xE100) * 128 + (s[i + 2] - 0xE100); i += 2; }
+            else { if (!is_key(c) && c != 0xE200) tot += measure(-1, self, &c, 1); continue; }
+            if (id > 0 && id < MAXID && g_txt[id]) tot += layout_text(fi, self, id, h, 30000)->wend;
+        }
+        if (tot > avail && avail > 0) {
+            g_force_pct = (int)(base * avail / tot) / 10 * 10;
+            if (g_force_pct < g_fit_min) g_force_pct = g_fit_min;
+        }
+    }
     for (i = 0; i < n; i++) {
         WCHAR c = s[i];
         if (c == 0xE200) { tw_pad(); continue; }                         /* typewriter pad: counted, never drawn */
-        if (c > 0xE200 && c < 0xE280) { g_ln[k].kst = 0; g_ln[k].kx = pen; g_ln[k].ky = r->top; }
-        else if (c == 0xE000) { g_ln[k].kst = 1; g_ln[k].kx = pen; g_ln[k].ky = r->top; }
+        if (c > 0xE200 && c < 0xE280) { g_ln[k].kst = 0; g_ln[k].kx = pen; g_ln[k].ky = r->top + dy; }
+        else if (c == 0xE000) { g_ln[k].kst = 1; g_ln[k].kx = pen; g_ln[k].ky = r->top + dy; }
         else if (c >= 0xE100 && c < 0xE180 && g_ln[k].kst == 1) { g_ln[k].kval = c - 0xE100; g_ln[k].kst = 2; }
         else if (c >= 0xE100 && c < 0xE180 && g_ln[k].kst == 2) {
             g_ln[k].kst = 0;
@@ -1037,14 +1066,14 @@ static INT key_piece(int k, void *self, void *spr, LPCWSTR s, int n, LPRECT r, D
         } else {                                    /* not a key char (before, between or after keys): draw it at the pen */
             if (!is_key(c) && g_ln[k].kst != 1 && g_ln[k].kst != 2) { RECT m = {0, 0, 0, 0}, rc;
                 g_real_draww(self, NULL, &c, 1, &m, DT_CALCRECT, col);
-                SetRect(&rc, pen, r->top, pen + 2 * h, r->bottom); g_real_draww(self, spr, &c, 1, &rc, DT_NOCLIP, col);
+                SetRect(&rc, pen, r->top + dy, pen + 2 * h, r->bottom + dy); g_real_draww(self, spr, &c, 1, &rc, DT_NOCLIP, col);
                 pen += m.right - m.left; if (kend >= 0) kend = pen; }
             continue;
         }
         if (g_ln[k].kst == 0) {
             int id = (c > 0xE200 && c < 0xE280) ? c - 0xE200 : g_ln[k].kval;
             if (id > 0 && id < MAXID && g_padt[id]) tw_key(id);
-            __try { pen = kend = expand_draw(self, spr, col, g_ln[k].kx, g_ln[k].ky, h, id); }
+            __try { pen = kend = expand_draw(self, spr, col, g_ln[k].kx, g_ln[k].ky, h, id); dy = g_ln[k].ky - r->top + g_kdy; }   /* a wrapped key: what follows goes on its last line */
             __except (EXCEPTION_EXECUTE_HANDLER) {
                 if (!g_engine_glyphs) {          /* larger Thai font failed: fall back to the engine font, keep expanding */
                     hooklog("!!! exception 0x%08lx in key expansion with the Thai font -- switching to the engine font", (unsigned long)GetExceptionCode());
@@ -1056,6 +1085,7 @@ static INT key_piece(int k, void *self, void *spr, LPCWSTR s, int n, LPRECT r, D
             }
         }
     }
+    g_force_pct = 0;
     g_ln[k].last_x = r->left; g_ln[k].our_x = r->left; g_ln[k].adv = -1;
     if (kend >= 0) { g_ln[k].our_x = kend; g_ln[k].adv = 0; g_ln[k].kst = 3; }   /* next adjacent piece of this row: right after the Thai text */
     return h;
@@ -1081,6 +1111,8 @@ static INT layout_draw(void *self, void *spr, LPCWSTR s, INT cnt, LPRECT r, DWOR
         k = row_for(self, r->top);
         if (r->left > g_ln[k].last_x && r->left - g_ln[k].last_x <= 2 * hh && g_ln[k].our_x != g_ln[k].last_x)   /* follows shifted text */
             OffsetRect(&rr, g_ln[k].our_x + (g_ln[k].adv >= 0 ? g_ln[k].adv : r->left - g_ln[k].last_x) - r->left, 0);
+        else if (r->left > g_ln[k].last_x && g_ln[k].kst == 3 && r->left < g_ln[k].our_x)                       /* value column the Thai label ran into */
+            OffsetRect(&rr, g_ln[k].our_x + hh / 3 - r->left, 0);
         if (g_keys_off) return hh;
         key_piece(k, self, spr, s, n, &rr, col);
         g_ln[k].last_x = r->left;                        /* gaps are measured in engine coordinates */
@@ -1088,14 +1120,33 @@ static INT layout_draw(void *self, void *spr, LPCWSTR s, INT cnt, LPRECT r, DWOR
     }
     for (i = 0; i < n; i++) if (is_thai(s[i])) thai = 1;
     k = row_for(self, r->top);
-    if (r->left > g_ln[k].last_x && g_ln[k].kst == 3 && r->left - g_ln[k].last_x > 2 * (r->bottom - r->top)) x = r->left;   /* separate column after a key (stat value) */
+    if (r->left > g_ln[k].last_x && g_ln[k].kst == 3 && r->left - g_ln[k].last_x > 2 * (r->bottom - r->top))   /* separate column after a key (stat value): after the Thai if it ran into it */
+        x = r->left < g_ln[k].our_x ? g_ln[k].our_x + (r->bottom - r->top) / 3 : r->left;
     else if (r->left > g_ln[k].last_x) x = g_ln[k].our_x + (g_ln[k].adv >= 0 ? g_ln[k].adv : r->left - g_ln[k].last_x);
-    else { __try { flush(k); } __except (EXCEPTION_EXECUTE_HANDLER) { g_ln[k].pend = 0; } x = r->left; }   /* new pass */
+    else {                                                                                                 /* new pass */
+        __try { flush(k); } __except (EXCEPTION_EXECUTE_HANDLER) { g_ln[k].pend = 0; }
+        x = r->left;
+        g_ln[k].rep = g_ln[k].accn <= 11 ? exe_lit(g_ln[k].acc, g_ln[k].accn) : 0;   /* last pass drew a name char by char */
+        if (g_ln[k].rep && first_time(fnv(13ULL, g_ln[k].acc, g_ln[k].accn * 2))) hooklog("row name -> text %d at h=%ld x=%ld y=%ld", g_ln[k].rep, r->bottom - r->top, r->left, r->top);
+        memcpy(g_ln[k].prev, g_ln[k].acc, sizeof g_ln[k].acc); g_ln[k].prevn = g_ln[k].accn; g_ln[k].accn = 0; g_ln[k].rx = r->left;
+    }
     g_ln[k].last_x = r->left; g_ln[k].our_x = x;
     fi = thai ? thai_font(self) : -1;
     if (fi < 0 && thai && g_engine_glyphs) fi = 0;           /* engine glyphs need no Thai font object; slot 0 = width cache only */
     if (fi < 0) {                                            /* no Thai here: engine glyphs, our x */
+        int same = 1, a0 = g_ln[k].accn;
         __try { flush(k); } __except (EXCEPTION_EXECUTE_HANDLER) { g_ln[k].pend = 0; }
+        for (i = 0; i < n; i++) {                            /* names drawn char by char / spaced ("夏 皓", level-up banner): collect */
+            if (s[i] == ' ') continue;
+            if (s[i] < 0x3400 || s[i] >= 0xA000 || g_ln[k].accn >= 11) { g_ln[k].accn = 99; same = 0; break; }
+            if (g_ln[k].accn >= g_ln[k].prevn || g_ln[k].prev[g_ln[k].accn] != s[i]) same = 0;
+            g_ln[k].acc[g_ln[k].accn++] = s[i];
+        }
+        if (g_ln[k].rep && same) {                           /* the name seen last pass: Thai once at the row start, Chinese hidden */
+            if (a0 == 0 && !g_keys_off) __try { expand_draw(self, spr, col, g_ln[k].rx, r->top, r->bottom - r->top, g_ln[k].rep); } __except (EXCEPTION_EXECUTE_HANDLER) { g_ln[k].rep = 0; }
+            return r->bottom - r->top;
+        }
+        g_ln[k].rep = 0;
         rc = *r; OffsetRect(&rc, x - r->left, 0); g_ln[k].adv = -1;
         return g_real_draww(self, spr, s, cnt, &rc, fmt, col);
     }
