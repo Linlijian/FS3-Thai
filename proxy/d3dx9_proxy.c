@@ -845,6 +845,9 @@ static int tw_reveal(int id, int n)      /* clusters to show */
         if (p < pt) return (int)((LONG)n * p * g_tw_pct / (100L * pt));
         if (d >= 4 && d * 2 >= pt) { g_tws[i].st = 2; return n; }        /* skipped */
         g_tws[i].st = 1; g_tws[i].tdone = now;
+        if (pt >= 10 && first_time(fnv(9ULL, &id, sizeof id)))                /* the game's own (Chinese) typing speed */
+            hooklog("typewriter: key %d, game typed %d chars in %lu ms (%lu chars/s)", id, pt + 3, (unsigned long)(now - g_tws[i].t0),
+                    (unsigned long)((pt + 3) * 1000UL / (now - g_tws[i].t0 + 1)));
     }
     s = (LONG)n * g_tw_pct / 100;
     s += (LONG)(now - g_tws[i].tdone) * s / (LONG)(g_tws[i].tdone - g_tws[i].t0 + 1);
