@@ -78,7 +78,7 @@ def install(game):
     print('[2/5] Backing up the original files ->', bk)
     for rel in REPLACED:
         d = os.path.join(bk, rel)
-        if not os.path.isfile(d): os.makedirs(os.path.dirname(d), exist_ok=True); shutil.copyfile(os.path.join(game, rel), d + '.part'); os.replace(d + '.part', d)
+        if not os.path.isfile(d) and os.path.isfile(os.path.join(game, rel)): os.makedirs(os.path.dirname(d), exist_ok=True); shutil.copyfile(os.path.join(game, rel), d + '.part'); os.replace(d + '.part', d)
     tmp = tempfile.mkdtemp(prefix='fs3th_'); out = os.path.join(tmp, 'out'); py = sys.executable
     env = dict(os.environ, FS3_ORIG=bk, PYTHONUTF8='1')
     def run(tool, *a):

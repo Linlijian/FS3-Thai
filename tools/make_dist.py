@@ -33,12 +33,14 @@ README = """FS3 Thai - Thai text for Fantasia Sango 3 (Steam)
 Uninstall: double-click uninstall.exe (restores every original file).
 If install says "not the version this mod supports": Steam > right-click the game > Properties > Installed Files > Verify integrity of game files, then run install.exe again.
 Needs Windows 10 or newer (font Leelawadee UI). Nothing from the game is included in this package; the Thai files are generated on your PC.
+Dialogue typing speed: FS3_TH_hook.ini in the game folder, typewriter_pct=70 (% of the game's speed; 100 = faster, 50 = slower; typewriter=0 = whole text at once).
 
 --- ภาษาไทย ---
 1. แตก zip ทั้งโฟลเดอร์ไว้ที่ไหนก็ได้ ห้ามย้ายไฟล์ออกจากโฟลเดอร์  2. ปิดเกม
 3. ดับเบิลคลิก install.exe  (หาเกมเอง ถามยืนยัน แล้วสร้างไฟล์ไทยจากเกมของคุณ ~1 นาที)  4. เปิดเกมจาก Steam ตามปกติ
 ถอนการติดตั้ง: uninstall.exe   ถ้าขึ้นว่าไฟล์ไม่ตรงเวอร์ชัน: Steam > Properties > Installed Files > Verify integrity แล้วรันใหม่
 ข้อความในหน้าต่างติดตั้งเป็นภาษาอังกฤษ เพราะ cmd แสดงภาษาไทยไม่ได้
+ความเร็วการพิมพ์บทสนทนา: แก้ FS3_TH_hook.ini ในโฟลเดอร์เกม บรรทัด typewriter_pct=70 (100 = เร็วขึ้น, 50 = ช้าลง, typewriter=0 = แสดงทั้งข้อความทันที)
 """
 open(f'{pkg}/README.txt', 'w', encoding='utf-8-sig', newline='\r\n').write(README)
 if emb:
