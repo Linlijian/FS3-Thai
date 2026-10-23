@@ -50,7 +50,7 @@ static int     g_log_textout = 1;
 static int     g_log_mb2wc = 1;
 static int     g_hooked_textout;
 static int     g_log_draw = 1;          /* log ID3DXFont::DrawTextA/W (step E, black-box) */
-static int     g_thai_layout, g_thai_scale, g_thai_dy, g_thai_charset, g_engine_glyphs, g_wrap_w, g_pitch_pct, g_box_lines, g_fit_min, g_typewriter;   /* defined with defaults in the Thai layout block */
+static int     g_thai_layout, g_thai_scale, g_thai_dy, g_thai_charset, g_engine_glyphs, g_wrap_w, g_pitch_pct, g_box_lines, g_fit_min, g_typewriter, g_tw_pct;   /* defined with defaults in the Thai layout block */
 static char    g_thai_face[64];
 static HMODULE g_self;
 static char    g_dir[MAX_PATH];         /* folder this DLL sits in */
@@ -146,6 +146,8 @@ static void load_config(void)
     g_box_lines = GetPrivateProfileIntA("hook", "box_lines", 0, g_ini);
     g_fit_min = GetPrivateProfileIntA("hook", "fit_min_pct", 70, g_ini);
     g_typewriter = GetPrivateProfileIntA("hook", "typewriter", 1, g_ini);
+    g_tw_pct = GetPrivateProfileIntA("hook", "typewriter_pct", 70, g_ini);
+    if (g_tw_pct < 10) g_tw_pct = 10;
     GetPrivateProfileStringA("hook", "markup_colors", "1:fff5002d", v, sizeof v, g_ini); load_markup_colors(v);
     GetPrivateProfileStringA("hook", "wrap_rules", "20@>330:204=300/e,24@>370:247=300/e,12@600=300/e,12@680=300/e,16@10:463=300/e,16@>30:463=300/e,16@288:330=300/e,16@328:363=300/e,20@294:70=300/e,20@294:98=300/e,20@294:126=300/e,20@294:154=300/e,20@294:182=300/e,24@55=300/e,20@32:209=300/e,20@>240:104=300/e,24@>440:101=300/e,20@>220:111=300/e,20@>220:139=300/e,20@328=300/e,20@388=300/e,12@689=96,12@673=112,12@662=128,24@>640=130/e/c,20@>640=135/e/c,20@260=140/e/c,12@17=72/e/c,12@>730:85=62/e,20@312=280/c,20@449=150/c,24@>300:471=770/r/h112,24@>100:467=770/r/h112,24@0:471=536/r/h112,12@0=168", v, sizeof v, g_ini); load_wrap_rules(v);
 }
@@ -818,23 +820,36 @@ static int fit_pct(void *self, int id, LONG h, int wrap, int ri)
 /* Typewriter: dialogue keys are followed by pad chars U+E200 up to the slot's Chinese length (build_keys.py), so the engine types
    and waits as long as for the Chinese. The pads it drew since the key's previous draw (= last frame) say how far it got; that
    share of the Thai clusters is shown. Skipping draws every pad at once -> the whole text. Until a pad has been seen at all
-   (engine never draws them?) texts are shown whole. */
-static struct { int id, cur, prev; DWORD t; } g_tws[8];
-static int g_tw_last = -1, g_tw_next, g_pad_ok, g_typewriter = 1;
+   (engine never draws them?) texts are shown whole.
+   typewriter_pct < 100 types slower than the game: typewriter_pct % of the text when the game has typed it all, the rest at the
+   same speed afterwards. A skip (most pads arriving in one frame) still shows everything at once. */
+static struct { int id, cur, prev, last, st; DWORD t, t0, tdone; } g_tws[8];   /* st: 0 typing, 1 game done (our tail), 2 whole */
+static int g_tw_last = -1, g_tw_next, g_pad_ok, g_typewriter = 1, g_tw_pct = 70;
 static int tw_find(int id) { int i; for (i = 0; i < 8; i++) if (g_tws[i].id == id) return i; return -1; }
 static void tw_key(int id)
 {
-    int i = tw_find(id);
-    if (i < 0) { i = g_tw_next; g_tw_next = (g_tw_next + 1) & 7; g_tws[i].id = id; g_tws[i].cur = 0; }
-    if (GetTickCount() - g_tws[i].t > 200) g_tws[i].cur = 0;            /* not drawn for a while: shown anew, starts empty */
-    g_tws[i].t = GetTickCount(); g_tws[i].prev = g_tws[i].cur; g_tws[i].cur = 0; g_tw_last = i;
+    int i = tw_find(id); DWORD now = GetTickCount();
+    if (i < 0) { i = g_tw_next; g_tw_next = (g_tw_next + 1) & 7; g_tws[i].id = id; g_tws[i].t = 0; }
+    if (now - g_tws[i].t > 200) { g_tws[i].cur = g_tws[i].last = g_tws[i].st = 0; g_tws[i].t0 = now; }   /* shown anew: starts empty */
+    g_tws[i].t = now; g_tws[i].prev = g_tws[i].cur; g_tws[i].cur = 0; g_tw_last = i;
 }
 static void tw_pad(void) { if (!g_pad_ok) { g_pad_ok = 1; hooklog("typewriter: pads are drawn by the engine"); } if (g_tw_last >= 0) g_tws[g_tw_last].cur++; }
 static int tw_reveal(int id, int n)      /* clusters to show */
 {
-    int i = tw_find(id);
-    if (!g_typewriter || !g_pad_ok || !g_padt[id] || i < 0 || g_tws[i].prev >= g_padt[id]) return n;
-    return n * g_tws[i].prev / g_padt[id];
+    int i = tw_find(id), p, d, pt = g_padt[id]; DWORD now = GetTickCount(); LONG s;
+    if (!g_typewriter || !g_pad_ok || !pt || i < 0) return n;
+    p = g_tws[i].prev; d = p - g_tws[i].last; g_tws[i].last = p;
+    if (d < 0) { g_tws[i].st = 0; g_tws[i].t0 = now; }                 /* the game started this text again */
+    if (g_tws[i].st == 2) return n;
+    if (g_tws[i].st == 0) {
+        if (p < pt) return (int)((LONG)n * p * g_tw_pct / (100L * pt));
+        if (d >= 4 && d * 2 >= pt) { g_tws[i].st = 2; return n; }        /* skipped */
+        g_tws[i].st = 1; g_tws[i].tdone = now;
+    }
+    s = (LONG)n * g_tw_pct / 100;
+    s += (LONG)(now - g_tws[i].tdone) * s / (LONG)(g_tws[i].tdone - g_tws[i].t0 + 1);
+    if (s >= n) { g_tws[i].st = 2; return n; }
+    return (int)s;
 }
 static LONG expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG h, int id)   /* -> x after the text's last line */
 {
