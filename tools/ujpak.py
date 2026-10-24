@@ -12,6 +12,17 @@ def entries(buf, base=0):
         name = e[:64].split(b'\0')[0].decode('latin1')
         off, size, flag = struct.unpack_from('<III', e, 0x40)
         yield name, base+off, size, flag, e[0x4c:]
+def patch_in_place(buf, new, base=0, path=''):
+    """bytearray buf: each leaf path in `new` gets its new data at its OLD offset (must not grow; the rest of the old room is
+    zero-filled, the entry's size updated). Every other byte keeps its place (FS3_SP: effects broke when offsets moved)."""
+    magic, ver, tot, idx, cnt = struct.unpack_from('<4sHIII', buf, base)
+    for i in range(cnt):
+        e = base + idx + i * 128; name = bytes(buf[e:e + 64]).split(b'\0')[0].decode('latin1')
+        off, size = struct.unpack_from('<II', buf, e + 0x40); p = f'{path}/{name}'
+        if buf[base + off:base + off + 4] == b'UJ  ': patch_in_place(buf, new, base + off, p)
+        elif p in new:
+            d = new[p]; assert len(d) <= size, (p, len(d), size)
+            buf[base + off:base + off + size] = d + bytes(size - len(d)); struct.pack_into('<I', buf, e + 0x44, len(d))
 def walk(buf, base=0, path=''):
     for name, off, size, flag, rest in entries(buf, base):
         p = f'{path}/{name}'

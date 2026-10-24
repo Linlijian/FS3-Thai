@@ -125,15 +125,11 @@ for a in ('FS3UpdataChs.dat', 'FS3Bin.dat'):
     for member in repl[a]:
         if member in by_member: verify(member, z2.read(member))
     report.append(f'{a} {len(blob)} B sha256 {hashlib.sha256(blob).hexdigest()[:16]} members {changed}')
-if repl['SP_FS3.pak']:                                                             # rebuild SP_FS3.pak from the original with the patched members
-    (kids, pname, ver), _, _ = ujpak.read_tree(sp_buf)
-    def put(nodes, path):
-        for k in nodes:
-            p = f'{path}/{k.name}'
-            if k.children is not None: put(k.children, p)
-            elif p in repl['SP_FS3.pak']: k.data = repl['SP_FS3.pak'][p]
-    put(kids, 'SP'); blob = ujpak.build(kids, pname, ver); open(f'{out}/SP_FS3.pak', 'wb').write(blob)
+if repl['SP_FS3.pak']:                                                             # SP_FS3.pak patched in place: no other file may move
+    blob = bytearray(sp_buf); ujpak.patch_in_place(blob, {m[2:]: d for m, d in repl['SP_FS3.pak'].items()}); blob = bytes(blob)
+    open(f'{out}/SP_FS3.pak', 'wb').write(blob)
     sp2 = {'SP' + p: blob[o:o + n] for p, o, n, *_ in ujpak.walk(blob)}; assert sp2.keys() == sp.keys()
+    assert [(p, o) for p, o, *_ in ujpak.walk(blob)] == [(p, o) for p, o, *_ in ujpak.walk(sp_buf)] and len(blob) == len(sp_buf)
     changed = sorted(m for m in sp if sp[m] != sp2[m]); assert changed == sorted(repl['SP_FS3.pak']), changed
     for member in changed: verify(member, sp2[member])
     report.append(f'SP_FS3.pak {len(blob)} B sha256 {hashlib.sha256(blob).hexdigest()[:16]} members {len(changed)}')

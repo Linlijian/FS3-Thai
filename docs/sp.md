@@ -52,7 +52,7 @@ python -I tools/build_channel.py work/fs3-copy poc/FS3_TH_map.txt work/out_sp
 python -I tools/build_keys.py    work/fs3-copy work/out_sp/FS3_TH_map.txt work/strings_master_sp.tsv work/out_sp poc/key_ids.tsv
 python -I tools/make_dist.py     work/fs3-copy work/strings_master_sp.tsv work/sp/d3dx9_25.dll work/launcher/install.exe work/dist_sp work/python-embed.zip
 ```
-* build_keys: `SP/...` members are patched into a rebuilt `SP_FS3.pak` (65 members), `CFG_SP/*` from their `.bnk.bin`,
+* build_keys: `SP/...` members are patched IN PLACE into `SP_FS3.pak` (65 members, `ujpak.patch_in_place`: same offsets, same size; a rebuilt pak moved 400 of 414 entries and the hero's skill effect drew as flat yellow quads, plana-sp1 2026-10-24 -- cause not proven, fix to be confirmed in game), `CFG_SP/*` from their `.bnk.bin`,
   `FS3_SP.exe` rows go to `FS3_TH_exe.txt` (patterns FS3.exe already has are skipped). FS3-only input still builds byte-identical.
 * All 127 SHORT ids (slots < 6 B) were taken by FS3: SP's 2-byte choices 是 / 否 (Dia028, Dia053) keep their Chinese and
   `FS3_TH_exe.txt` gets `是 -> ใช่`, `否 -> ไม่` (exact whole-string match only).
