@@ -635,6 +635,7 @@ static LONG thai_piece(int k, int fi, void *self, void *spr, LPCWSTR s, int n, L
    Typewriter: see tw_reveal. */
 #define TXT_FILE "FS3_TH_text.txt"
 #define MAXID    16384
+static LONG g_ar_end;                        /* expand_draw: right edge to align the next text to (exe_text "r" rows), 0 = off */
 #define MAXCL    320
 static WCHAR *g_txt[MAXID];
 static unsigned short g_padt[MAXID];     /* pads after the key in its slots ("id:pads" in FS3_TH_text.txt), 0 = no typewriter */
@@ -859,8 +860,10 @@ static int tw_reveal(int id, int n)      /* clusters to show */
 }
 static LONG expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG h, int id)   /* -> x after the text's last line */
 {
-    int ri = rule_for(h, x0, y0), wrap = ri < 0 ? g_wrap_w : g_wr[ri].w, clip = ri >= 0 && g_wr[ri].clip, fi, k, lim;
+    LONG are = g_ar_end;                                                       /* right-aligned replacement: one line, no panel rule */
+    int ri = are ? -1 : rule_for(h, x0, y0), wrap = ri < 0 ? (are ? 30000 : g_wrap_w) : g_wr[ri].w, clip = ri >= 0 && g_wr[ri].clip, fi, k, lim;
     struct lay *L; RECT rc; LONG th, dy, pitch, cut = -1;
+    g_ar_end = 0;
     if (id <= 0 || id >= MAXID || !g_txt[id]) {
         unsigned long long hh = fnv(1469598103934665603ULL, &id, sizeof id);
         if (first_time(hh)) hooklog("key %d: no text in %s", id, TXT_FILE);
@@ -886,6 +889,7 @@ static LONG expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG
         if (first_time(hh)) hooklog("key %d at h=%ld x=%ld y=%ld wrap=%d%s", id, h, x0, y0, wrap, fi < 0 ? " engine-size" : "");
     }
     L = layout_text(fi, self, id, h, clip ? 30000 : wrap); y0 += dy; lim = L->n;
+    if (are) x0 = are - L->wend;
     if (clip && L->wend > wrap) {                                              /* too wide even at the smallest size: cut, end with ".." */
         LONG ew = measure(-1, self, L"..", 2), end;
         for (lim = 0; lim < L->n; lim++) {
@@ -923,6 +927,7 @@ static LONG expand_draw(void *self, void *spr, DWORD col, LONG x0, LONG y0, LONG
 static WCHAR *g_rp[NREP], *g_rt[NREP]; static char g_lit[NREP];
 static unsigned long long g_lh[NLH]; static short g_li[NLH];
 static int g_nrep, g_dynn;
+static char g_rr[NREP], g_ralign[MAXID];    /* 3rd column "r": the Thai ends where the game's own text ended (title-screen version + credit) */
 static unsigned long long g_mh[512]; static short g_mid[512];   /* match cache: string hash -> id (0 = no match) */
 
 static WCHAR *utf8w(const char *a)
@@ -940,7 +945,9 @@ static void load_exe_text(void)
         char *tab = strchr(line, 9), *e = line + strlen(line);
         while (e > line && (e[-1] == 10 || e[-1] == 13)) *--e = 0;
         if (line[0] == '#' || !tab) continue;
-        *tab = 0; g_rp[g_nrep] = utf8w(line); g_rt[g_nrep] = utf8w(tab + 1);
+        *tab = 0;
+        { char *t2 = strchr(tab + 1, 9); if (t2) { *t2 = 0; g_rr[g_nrep] = t2[1] == 'r'; } }
+        g_rp[g_nrep] = utf8w(line); g_rt[g_nrep] = utf8w(tab + 1);
         if (g_rp[g_nrep] && g_rt[g_nrep]) {
             if (!wcschr(g_rp[g_nrep], '%')) {
                 unsigned long long h = fnv(1469598103934665603ULL, g_rp[g_nrep], (int)wcslen(g_rp[g_nrep]) * 2) | 1; int k = (int)(h % NLH);
@@ -1018,6 +1025,7 @@ static int exe_match(const WCHAR *s, int n)  /* -> text id of the Thai replaceme
             for (L = 0; L < 256; L++) if (g_lay[L].id == id) g_lay[L].id = 0;
             hooklog("exe text %d matched pattern %d -> text %d", n, i, id);
         }
+        g_ralign[id] = g_rr[i];
     }
     g_mh[slot] = h; g_mid[slot] = (short)id;
     return id;
@@ -1101,6 +1109,7 @@ static INT layout_draw(void *self, void *spr, LPCWSTR s, INT cnt, LPRECT r, DWOR
     if (g_nrep && !g_keys_off) {                         /* a string hardcoded in FS3.exe: draw its Thai replacement */
         int id = exe_match(s, n);
         if (id) {
+            if (g_ralign[id]) g_ar_end = r->left + measure(-1, self, s, n);
             __try { expand_draw(self, spr, col, r->left, r->top, r->bottom - r->top, id); }
             __except (EXCEPTION_EXECUTE_HANDLER) { hooklog("!!! exception in drawn-text replacement -- disabled"); g_nrep = 0; }
             return r->bottom - r->top;

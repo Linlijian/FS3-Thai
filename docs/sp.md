@@ -60,3 +60,11 @@ python -I tools/make_dist.py     work/fs3-copy work/strings_master_sp.tsv work/s
 * Installer: also backs up / rebuilds `Pack/SP_FS3.pak`, `CFG_SP/DefaultString.bin`, `CFG_SP/Mission.bin`; checks
   `FS3_SP.exe`, `SP_FS3.pak`, `CFG_SP/*.bnk.bin` (source_hashes.txt).
 * Not yet seen in game: FS3_SP needs a play test (title, SP dialogue, the 是/否 choice, item/skill screens).
+
+## Title-screen credit (v2) [V 2026-10-24, FS3 + FS3_SP title screens]
+The version number (`1.1.2023.10.26` FS3 / `2.1.2023.10.26` FS3_SP, ASCII literal in each exe, one DrawTextW at x=656 y=574 in
+800x600) is a drawn-text replacement: build_keys writes `<version>\tแปลไทยโดย ชายกลัวดอกพิกุล <version>\tr` (CREDIT in build_keys.py).
+The 3rd column `r` (proxy `g_rr` / `g_ralign`) right-aligns the replacement to where the game's own text ended (measured with the
+engine font), no panel rule, so it holds at any resolution.
+The UserJoy logo before the title is Bink video (`IMAGE/*.Bks`, exe also names `Anim\logo.bik`, not on disk): no credit there
+(re-encoding Bink needs RAD's encoder).

@@ -12,7 +12,8 @@ Rows with empty thai reuse the translation of another row with the same source, 
 Thai without any '|' is word-broken automatically (tools/thaibreak.py, Windows Uniscribe dictionary).
 Dialogue with more than PAGE lines ('*') keeps the engine's paging: the Thai is cut into pages of PAGE lines and the slot becomes
 KEY1* * * *KEY2* ...  (one key per page + blank lines, like the originals pad their pages), so each page is its own text."""
-import os, sys, hashlib, collections
+import os, sys, re, hashlib, collections
+CREDIT = 'แปลไทยโดย ชายกลัวดอกพิกุล'                                              # shown before the title screen's version number
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fszip, fsdialog, fstables, fsexe, thaichan, thaibreak, ujpak
 game, mapf, tsv, out = sys.argv[1:5]; REG = sys.argv[5] if len(sys.argv) > 5 else None
@@ -147,6 +148,10 @@ with open(f'{out}/FS3_TH_exe.txt', 'w', encoding='utf-8', newline='\n') as f:
         src = fstables.strs(member, d) if fstables.kind(member) else {(g.block, st): r for g in fsdialog.groups(fsdialog.parse(d)[0], d)[0] for st, r in g.strs}
         pat = fsexe.drawn(src[at], big2gb)
         if pat not in exe_p: exe_p.add(pat); f.write(f"{pat}\t{text}\n")
+    for e in EXES:                                                                  # title screen: credit before the version number,
+        if not os.path.exists(f'{game}/{e}'): continue                              # 3rd column r = the proxy ends it where the number ended
+        for v in sorted(set(re.findall(rb'\d+\.\d+\.20\d\d\.\d\d\.\d\d', open(f'{game}/{e}', 'rb').read()))):
+            f.write(f'{v.decode()}\t{CREDIT} {v.decode()}\tr\n')
     seen_p = set(); nn = 0                                                          # names / places: old saves and some NPC labels hold
     names = {}                                                                      # the Chinese name itself -> replace it where it is drawn
     for r in rows:                                                                  # (source read from the game file: the player package has no source column)
