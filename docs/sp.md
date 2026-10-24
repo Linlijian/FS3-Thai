@@ -43,3 +43,20 @@ Filter: `Process Name is FS3_SP.exe`, `Path contains FantasiaSango3`; start capt
 screen, start/load a game, quit. Export CSV (Time of Day, Process Name, PID, Operation, Path, Result, Detail) to
 `work/sp/procmon_sp.csv`, plus one screenshot of the title screen and one of SP dialogue. Analyse with
 `tools/procmon_summary.py <game> work/sp/procmon_sp.csv` (SP_FS3.pak is in its archive set).
+
+## Build (2026-10-24) [V on work/testgame: install, v1 -> this upgrade, uninstall back to pristine]
+One package for both exes (same folder, same proxy, one text-id space): the SP sheet is appended to the FS3 sheet.
+```bat
+python -I -c "import sys; a=open('work/strings_master.tsv',encoding='utf-8').read(); b=''.join(l for l in open('work/sp_save/strings_sp_prefill.tsv',encoding='utf-8') if l[0]!='#'); open('work/strings_master_sp.tsv','w',encoding='utf-8',newline='\n').write(a+b)"
+python -I tools/build_channel.py work/fs3-copy poc/FS3_TH_map.txt work/out_sp
+python -I tools/build_keys.py    work/fs3-copy work/out_sp/FS3_TH_map.txt work/strings_master_sp.tsv work/out_sp poc/key_ids.tsv
+python -I tools/make_dist.py     work/fs3-copy work/strings_master_sp.tsv work/sp/d3dx9_25.dll work/launcher/install.exe work/dist_sp work/python-embed.zip
+```
+* build_keys: `SP/...` members are patched into a rebuilt `SP_FS3.pak` (65 members), `CFG_SP/*` from their `.bnk.bin`,
+  `FS3_SP.exe` rows go to `FS3_TH_exe.txt` (patterns FS3.exe already has are skipped). FS3-only input still builds byte-identical.
+* All 127 SHORT ids (slots < 6 B) were taken by FS3: SP's 2-byte choices 是 / 否 (Dia028, Dia053) keep their Chinese and
+  `FS3_TH_exe.txt` gets `是 -> ใช่`, `否 -> ไม่` (exact whole-string match only).
+* Same-source reuse also fills FS3 rows: FS3's staff credits (FS2_Narrate 38-65, untranslated before) now take the SP translation.
+* Installer: also backs up / rebuilds `Pack/SP_FS3.pak`, `CFG_SP/DefaultString.bin`, `CFG_SP/Mission.bin`; checks
+  `FS3_SP.exe`, `SP_FS3.pak`, `CFG_SP/*.bnk.bin` (source_hashes.txt).
+* Not yet seen in game: FS3_SP needs a play test (title, SP dialogue, the 是/否 choice, item/skill screens).

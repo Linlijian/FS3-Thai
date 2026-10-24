@@ -13,7 +13,7 @@ brk = lambda t: t if '|' in t else thaibreak.breaks(t)
 out, seen = [], set()
 for r in rows:
     thai = r[-1]
-    if r[0] == 'FS3.exe':                                   # drawn-text replacement: block = string index, no dedupe (as in build_keys)
+    if r[0] in ('FS3.exe', 'FS3_SP.exe'):                                   # drawn-text replacement: block = string index, no dedupe (as in build_keys)
         if thai.strip(): out.append((r[0], r[1], r[2], brk(thai)))
         continue
     at = (r[0], int(r[1]), int(r[2]))

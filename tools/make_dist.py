@@ -23,14 +23,15 @@ subprocess.run([sys.executable, '-I', f'{ROOT}/tools/pack_translations.py', stri
 sha = lambda p: hashlib.sha256(open(p, 'rb').read()).hexdigest()
 with open(f'{pkg}/mod/source_hashes.txt', 'w', encoding='ascii', newline='\n') as f:
     f.write('# sha256 of the ORIGINAL files this package builds from (checked by install.py before anything is changed)\n')
-    for rel in ['Pack/FS3Bin.dat', 'Pack/FS3UpdataChs.dat', 'Pack/FS3UI.pak', 'CFG/DefaultString.bin', 'CFG/Mission.bnk.bin', 'FS3.exe']:
+    for rel in ['Pack/FS3Bin.dat', 'Pack/FS3UpdataChs.dat', 'Pack/FS3UI.pak', 'CFG/DefaultString.bin', 'CFG/Mission.bnk.bin', 'FS3.exe',
+                'Pack/SP_FS3.pak', 'CFG_SP/DefaultString.bnk.bin', 'CFG_SP/Mission.bnk.bin', 'FS3_SP.exe']:          # + FS3_SP (docs/sp.md)
         f.write(f'{sha(fszip.orig(game, rel))}  {rel}\n')
 README = """FS3 Thai - Thai text for Fantasia Sango 3 (Steam)
 
 1. Close the game.
 2. Double-click FS3_Thai_Setup.exe and choose 1 (install). It finds your game, asks you to confirm, then builds the Thai files
    from YOUR copy of the game (about 1 minute).
-3. Start the game from Steam as usual.
+3. Start the game from Steam as usual. Both FS3 and the expansion FS3_SP are in Thai.
 
 Uninstall: double-click FS3_Thai_Setup.exe again and choose 2 (restores every original file).
 If it says "not the version this mod supports": Steam > right-click the game > Properties > Installed Files > Verify integrity of
@@ -43,7 +44,7 @@ Dialogue typing speed (optional): create FS3_TH_hook.ini in the game folder with
 
 --- ภาษาไทย ---
 1. ปิดเกม  2. ดับเบิลคลิก FS3_Thai_Setup.exe แล้วเลือก 1 (ติดตั้ง) โปรแกรมหาเกมเอง ถามยืนยัน แล้วสร้างไฟล์ไทยจากเกมของคุณ (~1 นาที)
-3. เปิดเกมจาก Steam ตามปกติ
+3. เปิดเกมจาก Steam ตามปกติ (ทั้งภาคหลัก FS3 และภาคเสริม FS3_SP เป็นภาษาไทย)
 ถอนการติดตั้ง: ดับเบิลคลิก FS3_Thai_Setup.exe อีกครั้งแล้วเลือก 2
 ถ้าขึ้นว่าไฟล์ไม่ตรงเวอร์ชัน: Steam > Properties > Installed Files > Verify integrity แล้วรันใหม่
 ข้อความในหน้าต่างติดตั้งเป็นภาษาอังกฤษ เพราะ cmd แสดงภาษาไทยไม่ได้

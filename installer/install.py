@@ -9,8 +9,10 @@ import os, sys, re, shutil, hashlib, subprocess, tempfile
 try: sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception: pass
 APP = os.path.abspath(sys.argv[0]); HERE = os.path.dirname(APP); MOD = os.path.join(HERE, 'mod')
-REPLACED = ['Pack/FS3Bin.dat', 'Pack/FS3UpdataChs.dat', 'Pack/FS3UI.pak', 'CFG/DefaultString.bin', 'CFG/Mission.bin']   # originals backed up, rebuilt
-CHECKED = [r for r in REPLACED if r != 'CFG/Mission.bin'] + ['CFG/Mission.bnk.bin', 'FS3.exe']   # Mission.bin is built from the game's own Mission.bnk.bin                                                                      # must match source_hashes.txt
+SP = ['Pack/SP_FS3.pak', 'CFG_SP/DefaultString.bin', 'CFG_SP/Mission.bin']                                       # FS3_SP.exe (the expansion, docs/sp.md)
+REPLACED = ['Pack/FS3Bin.dat', 'Pack/FS3UpdataChs.dat', 'Pack/FS3UI.pak', 'CFG/DefaultString.bin', 'CFG/Mission.bin'] + SP   # originals backed up, rebuilt
+BUILT_FROM = {'CFG/Mission.bin': 'CFG/Mission.bnk.bin', 'CFG_SP/Mission.bin': 'CFG_SP/Mission.bnk.bin', 'CFG_SP/DefaultString.bin': 'CFG_SP/DefaultString.bnk.bin'}   # the game's own pristine copies
+CHECKED = [BUILT_FROM.get(r, r) for r in REPLACED] + ['FS3.exe', 'FS3_SP.exe']                                    # must match source_hashes.txt
 PLACED = ['FS3_TH_map.txt', 'FS3_TH_text.txt', 'FS3_TH_exe.txt']                                      # generated, dropped next to FS3.exe
 OWN = PLACED + ['FS3_TH_hook.ini', 'FS3_TH_hook.log', 'FS3_TH_installed.txt', 'FS3_TH_hook.ini.old']
 class Fail(Exception): pass
@@ -94,8 +96,8 @@ def install(game):
         print('[4/5] Checking the built files')
         import fszip, ujpak
         for a in ('FS3Bin.dat', 'FS3UpdataChs.dat'): assert fszip.open_fszip(os.path.join(out, a)).testzip() is None, a
-        ujpak.read_tree(open(os.path.join(out, 'FS3UI.pak'), 'rb').read())
-        for f in PLACED + ['CFG/DefaultString.bin', 'CFG/Mission.bin']: assert os.path.getsize(os.path.join(out, f)) > 0, f
+        for a in ('FS3UI.pak', 'SP_FS3.pak'): ujpak.read_tree(open(os.path.join(out, a), 'rb').read())
+        for f in PLACED + ['CFG/DefaultString.bin', 'CFG/Mission.bin', 'CFG_SP/DefaultString.bin', 'CFG_SP/Mission.bin']: assert os.path.getsize(os.path.join(out, f)) > 0, f
         print('[5/5] Installing')
         dll, orig, ours = (os.path.join(game, 'd3dx9_25.dll'), os.path.join(game, 'd3dx9_25_orig.dll'), os.path.join(MOD, 'd3dx9_25.dll'))
         if not os.path.isfile(orig):
@@ -107,6 +109,7 @@ def install(game):
         todo = [put(os.path.join(out, 'FS3Bin.dat'), os.path.join(game, 'Pack', 'FS3Bin.dat')), put(os.path.join(out, 'FS3UpdataChs.dat'), os.path.join(game, 'Pack', 'FS3UpdataChs.dat')),
                 put(os.path.join(out, 'FS3UI.pak'), os.path.join(game, 'Pack', 'FS3UI.pak')), put(os.path.join(out, 'CFG', 'DefaultString.bin'), os.path.join(game, 'CFG', 'DefaultString.bin')),
                 put(os.path.join(out, 'CFG', 'Mission.bin'), os.path.join(game, 'CFG', 'Mission.bin'))]
+        todo += [put(os.path.join(out, os.path.basename(r) if r.startswith('Pack/') else r), os.path.join(game, r)) for r in SP]
         todo += [put(os.path.join(out, f), os.path.join(game, f)) for f in PLACED]
         swap = not os.path.isfile(orig); dll_new = put(ours, dll) and dll
         try:
