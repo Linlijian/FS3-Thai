@@ -45,9 +45,14 @@ TABLES = {'KINDLE.BIN': [(52, 849, 116, 0, 20), (105328, 1429, 96, 20, 20), (242
 # OFFT: base -> (pointer table offset, count, blob offset, absolute pointers?); every string rewritten, pointers rebuilt; address = (index, 0)
 OFFT = {'FS2_Narrate.bin': (1368, 66, 3480, True),          # 66 narration / credit lines, absolute pointers
         'Mission.bin': (28024, 999, 32020, False)}           # 999 quest-log lines (CFG/, original = Mission.bnk.bin), blob-relative
+def _counted(base, data):
+    """KINDLE / FS3Maps record counts come from the header @40 (FS3_SP's own copies are longer / shorter than FS3's)"""
+    if base == 'FS3Maps.BIN': return [(44, struct.unpack_from('<I', data, 40)[0], 1268, 16, 16)]
+    n0, n1, n2 = struct.unpack_from('<3I', data, 40); t1 = 52 + n0 * 116 + n0 * 8     # n0 * 8 B between tables 0 and 1
+    return [(52, n0, 116, 0, 20), (t1, n1, 96, 20, 20), (t1 + n1 * 96, n2, 204, 0, 20)]
 def _tab(base, data):
     out = []
-    for ti, (first, n, rec, no, ns) in enumerate(TABLES[base]):
+    for ti, (first, n, rec, no, ns) in enumerate(_counted(base, data) if base in ('KINDLE.BIN', 'FS3Maps.BIN') else TABLES[base]):
         assert first + n * rec <= len(data), base
         for i in range(n):
             o = first + i * rec + no; out.append((i, ti, o, ns, data[o:data.index(b'\0', o)]))
